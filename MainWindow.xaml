@@ -1,0 +1,92 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Window
+    x:Class="Discrypt.MainWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="using:Discrypt"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    mc:Ignorable="d"
+    Title="Discrypt">
+
+    <Grid Background="{ThemeResource ApplicationPageBackgroundThemeBrush}" 
+          Padding="24">
+        <StackPanel 
+            HorizontalAlignment="Center" 
+            VerticalAlignment="Center"
+            Spacing="20"
+            MaxWidth="400">
+
+            <!-- Header -->
+            <TextBlock 
+                Text="Discrypt" 
+                FontSize="28" 
+                FontWeight="SemiBold"
+                HorizontalAlignment="Center"
+                Margin="0,0,0,12"/>
+
+            <!-- On/Off Switch -->
+            <StackPanel Spacing="8">
+                <TextBlock 
+                    Text="Status" 
+                    FontSize="14" 
+                    FontWeight="SemiBold"/>
+                <ToggleSwitch 
+                    x:Name="StatusSwitch"
+                    OnContent="On" 
+                    OffContent="Off"
+                    Header="Enable Encryption"/>
+            </StackPanel>
+
+            <!-- Key Input Field -->
+            <StackPanel Spacing="8">
+                <TextBlock 
+                    Text="Encryption Key" 
+                    FontSize="14" 
+                    FontWeight="SemiBold"/>
+                <PasswordBox 
+                    x:Name="KeyInput"
+                    PlaceholderText="Enter your encryption key"
+                    MinWidth="350"
+                    PasswordRevealMode="Peek"
+                    PasswordChanged="KeyInput_PasswordChanged"/>
+            </StackPanel>
+
+            <!-- Public Key Display -->
+            <StackPanel Spacing="8">
+                <TextBlock 
+                    Text="Your Public Key" 
+                    FontSize="14" 
+                    FontWeight="SemiBold"/>
+                <TextBox 
+                    x:Name="PublicKeyDisplay"
+                    IsReadOnly="True"
+                    MinWidth="350"
+                    TextWrapping="Wrap"
+                    Text="No key generated yet"/>
+            </StackPanel>
+
+            <!-- Shared Secret Display -->
+            <StackPanel Spacing="8">
+                <TextBlock 
+                    Text="Shared Secret" 
+                    FontSize="14" 
+                    FontWeight="SemiBold"/>
+                <TextBox 
+                    x:Name="SharedSecretDisplay"
+                    IsReadOnly="True"
+                    MinWidth="350"
+                    TextWrapping="Wrap"
+                    Text="No shared secret yet"/>
+            </StackPanel>
+
+            <!-- Refresh Button -->
+            <Button 
+                x:Name="RefreshButton"
+                Content="Refresh Keys"
+                HorizontalAlignment="Center"
+                Click="RefreshButton_Click"/>
+
+        </StackPanel>
+    </Grid>
+</Window>

@@ -1,0 +1,10 @@
+<Solution>
+  <Configurations>
+    <Platform Name="ARM64" />
+    <Platform Name="x64" />
+    <Platform Name="x86" />
+  </Configurations>
+  <Project Path="Discrypt.vcxproj" Id="09f7106a-ac9d-4c38-bcbe-da97989fdde0">
+    <Deploy />
+  </Project>
+</Solution>
