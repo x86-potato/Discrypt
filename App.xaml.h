@@ -2,12 +2,6 @@
 
 #include "App.xaml.g.h"
 
-// Forward declaration
-namespace Discrypt
-{
-    class MessageMonitor;
-}
-
 namespace winrt::Discrypt::implementation
 {
     struct App : AppT<App>
@@ -16,13 +10,9 @@ namespace winrt::Discrypt::implementation
         ~App();
 
         void OnLaunched(Microsoft::UI::Xaml::LaunchActivatedEventArgs const&);
-
-        // Message monitoring
-        void StartMessageMonitoring();
-        void StopMessageMonitoring();
+        void PromptForUserHandle();
 
     private:
         winrt::Microsoft::UI::Xaml::Window window{ nullptr };
-        ::Discrypt::MessageMonitor* m_messageMonitor{ nullptr };
     };
 }

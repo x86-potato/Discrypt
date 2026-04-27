@@ -4,7 +4,9 @@
 #include "CryptoManager.h"
 #include "DiscordInterop.h"
 #include "KeyboardHook.h"
-#include "MessageMonitor.h"
+#include <chrono>
+#include <ctime>
+#include <fstream>
 
 #pragma comment(lib, "bcrypt.lib")
 
@@ -14,9 +16,111 @@
 // Global state
 std::wstring g_encryptionKey = L""; // Global storage for the password/key
 Discrypt::EncryptionSession g_session;
+winrt::Discrypt::implementation::MainWindow* g_mainWindow = nullptr;
+std::wstring g_userHandle = L""; // User's @handle for identification
 
 namespace winrt::Discrypt::implementation
 {
+	/// <summary>
+	/// Load user handle from persistent storage
+	/// </summary>
+	std::wstring LoadUserHandle()
+	{
+		WCHAR tempPath[MAX_PATH];
+		GetTempPathW(MAX_PATH, tempPath);
+		std::wstring folderPath = std::wstring(tempPath) + L"Discrypt\\";
+		std::wstring filePath = folderPath + L"user_handle.txt";
+
+		std::wifstream file(filePath);
+		if (file.is_open())
+		{
+			std::wstring handle;
+			if (std::getline(file, handle))
+			{
+				file.close();
+				OutputDebugStringW((L"[Discrypt] Loaded user handle: " + handle + L"\n").c_str());
+				return handle;
+			}
+			file.close();
+		}
+		return L"";
+	}
+
+	/// <summary>
+	/// Save user handle to persistent storage
+	/// </summary>
+	void SaveUserHandle(const std::wstring& handle)
+	{
+		WCHAR tempPath[MAX_PATH];
+		GetTempPathW(MAX_PATH, tempPath);
+		std::wstring folderPath = std::wstring(tempPath) + L"Discrypt\\";
+		CreateDirectoryW(folderPath.c_str(), NULL);
+
+		std::wstring filePath = folderPath + L"user_handle.txt";
+		std::wofstream file(filePath, std::ios::out | std::ios::trunc);
+		if (file.is_open())
+		{
+			file << handle;
+			file.close();
+			OutputDebugStringW((L"[Discrypt] Saved user handle: " + handle + L"\n").c_str());
+		}
+	}
+
+	/// <summary>
+	/// Prompt user for their Discord handle
+	/// </summary>
+	void App::PromptForUserHandle()
+	{
+		using namespace winrt::Microsoft::UI::Xaml;
+		using namespace winrt::Microsoft::UI::Xaml::Controls;
+
+		ContentDialog dialog;
+		dialog.XamlRoot(window.Content().XamlRoot());
+		dialog.Title(winrt::box_value(L"Welcome to Discrypt"));
+		dialog.PrimaryButtonText(L"Save");
+		dialog.IsPrimaryButtonEnabled(false);
+		dialog.DefaultButton(ContentDialogButton::Primary);
+
+		// Create input box
+		TextBox handleInput;
+		handleInput.PlaceholderText(L"@username");
+		handleInput.Margin({ 0, 12, 0, 0 });
+
+		// Enable button only when input is not empty
+		handleInput.TextChanged([dialog, handleInput](auto const&, auto const&) mutable
+			{
+				std::wstring text = handleInput.Text().c_str();
+				dialog.IsPrimaryButtonEnabled(!text.empty());
+			});
+
+		// Add input to content
+		StackPanel panel;
+		TextBlock contentText;
+		contentText.Text(L"Please enter your Discord handle (e.g., @username) for message identification:");
+		contentText.TextWrapping(TextWrapping::Wrap);
+		panel.Children().Append(contentText);
+		panel.Children().Append(handleInput);
+		dialog.Content(panel);
+
+		auto asyncOp = dialog.ShowAsync();
+		asyncOp.Completed([handleInput](auto const& sender, auto const&)
+			{
+				auto result = sender.GetResults();
+				if (result == ContentDialogResult::Primary)
+				{
+					std::wstring handle = handleInput.Text().c_str();
+					// Ensure handle starts with @
+					if (!handle.empty() && handle[0] != L'@')
+					{
+						handle = L"@" + handle;
+					}
+					g_userHandle = handle;
+					SaveUserHandle(g_userHandle);
+					OutputDebugStringW((L"[Discrypt] User handle set to: " + g_userHandle + L"\n").c_str());
+				}
+			});
+	}
+
 	/// <summary>
 	/// Handles Alt+Enter key press in Discord
 	/// </summary>
@@ -32,12 +136,17 @@ namespace winrt::Discrypt::implementation
 			// Partner initiated handshake - respond with our public key
 			OutputDebugStringW(L"[Discrypt] Responding to handshake initiation...\n");
 
-			// Extract partner's public key
-			size_t colonPos = originalText.find(L':');
-			if (colonPos != std::wstring::npos)
+			// Extract partner's handle and public key
+			// Format: HANDSHAKE_INIT:@handle:publickey
+			size_t firstColon = originalText.find(L':');
+			size_t secondColon = originalText.find(L':', firstColon + 1);
+			if (firstColon != std::wstring::npos && secondColon != std::wstring::npos)
 			{
-				std::wstring partnerKeyBase64 = originalText.substr(colonPos + 1);
+				std::wstring partnerHandle = originalText.substr(firstColon + 1, secondColon - firstColon - 1);
+				std::wstring partnerKeyBase64 = originalText.substr(secondColon + 1);
 				g_session.partnerPublicKeyBlob = ::Discrypt::CryptoManager::Base64Decode(partnerKeyBase64);
+
+				OutputDebugStringW((L"[Discrypt] Partner handle: " + partnerHandle + L"\n").c_str());
 
 				OutputDebugStringW((L"[Discrypt] Received partner public key (" +
 					std::to_wstring(g_session.partnerPublicKeyBlob.size()) + L" bytes)\n").c_str());
@@ -71,25 +180,36 @@ namespace winrt::Discrypt::implementation
 				return;
 			}
 
-			// Send our public key as response
+			// Send our public key as response with our handle
 			std::wstring ourPublicKeyBase64 = ::Discrypt::CryptoManager::Base64Encode(g_session.publicKeyBlob);
-			modifiedText = L"HANDSHAKE_RESPONSE:" + ourPublicKeyBase64;
+			modifiedText = L"HANDSHAKE_RESPONSE:" + g_userHandle + L":" + ourPublicKeyBase64;
 
 			g_session.state = ::Discrypt::EncryptionSession::State::HandshakeComplete;
 			OutputDebugStringW(L"[Discrypt] Handshake complete (responder)!\n");
 			OutputDebugStringW((L"[Discrypt] Shared Secret: " + ::Discrypt::CryptoManager::GetSharedSecretHex(g_session) + L"\n").c_str());
+
+			// Update UI
+			if (g_mainWindow)
+			{
+				g_mainWindow->UpdateHandshakeStatus();
+			}
 		}
 		else if (originalText.find(L"HANDSHAKE_RESPONSE:") == 0)
 		{
 			// Received response to our handshake initiation
 			OutputDebugStringW(L"[Discrypt] Received handshake response...\n");
 
-			// Extract partner's public key
-			size_t colonPos = originalText.find(L':');
-			if (colonPos != std::wstring::npos)
+			// Extract partner's handle and public key
+			// Format: HANDSHAKE_RESPONSE:@handle:publickey
+			size_t firstColon = originalText.find(L':');
+			size_t secondColon = originalText.find(L':', firstColon + 1);
+			if (firstColon != std::wstring::npos && secondColon != std::wstring::npos)
 			{
-				std::wstring partnerKeyBase64 = originalText.substr(colonPos + 1);
+				std::wstring partnerHandle = originalText.substr(firstColon + 1, secondColon - firstColon - 1);
+				std::wstring partnerKeyBase64 = originalText.substr(secondColon + 1);
 				g_session.partnerPublicKeyBlob = ::Discrypt::CryptoManager::Base64Decode(partnerKeyBase64);
+
+				OutputDebugStringW((L"[Discrypt] Partner handle: " + partnerHandle + L"\n").c_str());
 
 				OutputDebugStringW((L"[Discrypt] Received partner public key (" +
 					std::to_wstring(g_session.partnerPublicKeyBlob.size()) + L" bytes)\n").c_str());
@@ -106,6 +226,12 @@ namespace winrt::Discrypt::implementation
 			OutputDebugStringW(L"[Discrypt] Handshake complete (initiator)!\n");
 			OutputDebugStringW((L"[Discrypt] Shared Secret: " + ::Discrypt::CryptoManager::GetSharedSecretHex(g_session) + L"\n").c_str());
 
+			// Update UI
+			if (g_mainWindow)
+			{
+				g_mainWindow->UpdateHandshakeStatus();
+			}
+
 			// Don't send anything - just complete the handshake
 			return;
 		}
@@ -121,15 +247,21 @@ namespace winrt::Discrypt::implementation
 			}
 
 			std::wstring ourPublicKeyBase64 = ::Discrypt::CryptoManager::Base64Encode(g_session.publicKeyBlob);
-			modifiedText = L"HANDSHAKE_INIT:" + ourPublicKeyBase64;
+			modifiedText = L"HANDSHAKE_INIT:" + g_userHandle + L":" + ourPublicKeyBase64;
 
 			g_session.state = ::Discrypt::EncryptionSession::State::HandshakeInitiated;
 			OutputDebugStringW((L"[Discrypt] Public Key: " + ::Discrypt::CryptoManager::GetPublicKeyHex(g_session) + L"\n").c_str());
+
+			// Update UI
+			if (g_mainWindow)
+			{
+				g_mainWindow->UpdateHandshakeStatus();
+			}
 		}
 		else if (originalText.find(L"[ENC]:") == 0)
 		{
-			// Encrypted message detected - decrypt it
-			OutputDebugStringW(L"[Discrypt] Encrypted message detected, decrypting...\n");
+			// Encrypted message detected in Discord input - decrypt it in place
+			OutputDebugStringW(L"[Discrypt] Encrypted message detected in Discord, decrypting in-place...\n");
 
 			if (g_session.state != ::Discrypt::EncryptionSession::State::HandshakeComplete)
 			{
@@ -137,11 +269,31 @@ namespace winrt::Discrypt::implementation
 				return;
 			}
 
-			std::wstring decrypted = ::Discrypt::CryptoManager::DecryptMessage(g_session, originalText);
+			// Parse sender handle from message
+			// Format: [ENC]:@sender:encrypteddata
+			size_t firstColon = originalText.find(L':');
+			size_t secondColon = originalText.find(L':', firstColon + 1);
+			std::wstring senderHandle = L"unknown";
+			std::wstring encryptedData = originalText;
 
-			// Replace encrypted text with decrypted text for display
+			if (firstColon != std::wstring::npos && secondColon != std::wstring::npos)
+			{
+				senderHandle = originalText.substr(firstColon + 1, secondColon - firstColon - 1);
+				encryptedData = L"[ENC]:" + originalText.substr(secondColon + 1); // Reconstruct for decryption
+				OutputDebugStringW((L"[Discrypt] Sender: " + senderHandle + L"\n").c_str());
+			}
+
+			std::wstring decrypted = ::Discrypt::CryptoManager::DecryptMessage(g_session, encryptedData);
+
+			// Replace encrypted text with decrypted text in Discord
 			::Discrypt::DiscordInterop::WriteTextBox(decrypted);
 			OutputDebugStringW((L"[Discrypt] Decrypted: " + decrypted + L"\n").c_str());
+
+			// Add to app history for the sender
+			if (g_mainWindow)
+			{
+				g_mainWindow->AddReceivedMessageToHistory(senderHandle, decrypted);
+			}
 
 			// Don't send anything - just show the decrypted message
 			return;
@@ -159,12 +311,30 @@ namespace winrt::Discrypt::implementation
 			}
 
 			// Encrypt the message
-			modifiedText = ::Discrypt::CryptoManager::EncryptMessage(g_session, originalText);
+			std::wstring encryptedData = ::Discrypt::CryptoManager::EncryptMessage(g_session, originalText);
 
-			if (modifiedText.empty())
+			if (encryptedData.empty())
 			{
 				OutputDebugStringW(L"[Discrypt] Encryption failed\n");
 				return;
+			}
+
+			// Add sender handle to encrypted message
+			// Format: [ENC]:@sender:encrypteddata
+			size_t colonPos = encryptedData.find(L':');
+			if (colonPos != std::wstring::npos)
+			{
+				modifiedText = encryptedData.substr(0, colonPos + 1) + g_userHandle + L":" + encryptedData.substr(colonPos + 1);
+			}
+			else
+			{
+				modifiedText = encryptedData; // Fallback
+			}
+
+			// Add the original (decrypted) message to history
+			if (g_mainWindow)
+			{
+				g_mainWindow->AddSentMessageToHistory(g_userHandle, originalText);
 			}
 		}
 		else
@@ -177,15 +347,23 @@ namespace winrt::Discrypt::implementation
 		OutputDebugStringW((L"[Discrypt] Original: " + originalText + L"\n").c_str());
 		OutputDebugStringW((L"[Discrypt] Modified: " + modifiedText + L"\n").c_str());
 
-		// Write the modified text back
-		::Discrypt::DiscordInterop::WriteTextBox(modifiedText);
+		// Only write if we have modified text
+		if (!modifiedText.empty())
+		{
+			// Write the modified text back
+			::Discrypt::DiscordInterop::WriteTextBox(modifiedText);
 
-		// Reduced delay - just enough for text to be written
-		Sleep(50);
+			// Reduced delay - just enough for text to be written
+			Sleep(50);
 
-		// Now send Enter programmatically to send the message
-		OutputDebugStringW(L"[Discrypt] Sending Enter key programmatically...\n");
-		::Discrypt::KeyboardHook::SimulateKeyPress(VK_RETURN);
+			// Now send Enter programmatically to send the message
+			OutputDebugStringW(L"[Discrypt] Sending Enter key programmatically...\n");
+			::Discrypt::KeyboardHook::SimulateKeyPress(VK_RETURN);
+		}
+		else
+		{
+			OutputDebugStringW(L"[Discrypt] No modified text to send.\n");
+		}
 	}
 
 	/// <summary>
@@ -214,7 +392,9 @@ namespace winrt::Discrypt::implementation
 	/// <param name="e">Details about the launch request and process.</param>
 	void App::OnLaunched([[maybe_unused]] Microsoft::UI::Xaml::LaunchActivatedEventArgs const& e)
 	{
-		window = make<MainWindow>();
+		auto mainWindowImpl = make_self<MainWindow>();
+		g_mainWindow = mainWindowImpl.get();
+		window = *mainWindowImpl;
 
 		// Set default window size
 		auto appWindow = window.AppWindow();
@@ -225,70 +405,31 @@ namespace winrt::Discrypt::implementation
 
 		window.Activate();
 
+		// Load or prompt for user handle
+		g_userHandle = LoadUserHandle();
+		if (g_userHandle.empty())
+		{
+			// Prompt user for their @handle after window is activated
+			window.DispatcherQueue().TryEnqueue([this]()
+				{
+					PromptForUserHandle();
+				});
+		}
+		else
+		{
+			OutputDebugStringW((L"[Discrypt] Using stored handle: " + g_userHandle + L"\n").c_str());
+		}
+
 		// Install the keyboard hook with our callback
 		::Discrypt::KeyboardHook::Install(HandleAltEnter);
 	}
 
 	App::~App()
 	{
-		// Stop message monitoring
-		StopMessageMonitoring();
-
 		// Uninstall keyboard hook
 		::Discrypt::KeyboardHook::Uninstall();
 
 		// Cleanup encryption session
 		::Discrypt::CryptoManager::CleanupSession(g_session);
 	}
-
-	void App::StartMessageMonitoring()
-	{
-		if (m_messageMonitor)
-		{
-			OutputDebugStringW(L"[Discrypt] Message monitor already running\n");
-			return;
-		}
-
-		HWND discordWindow = ::Discrypt::DiscordInterop::GetDiscordWindow();
-		if (!discordWindow)
-		{
-			OutputDebugStringW(L"[Discrypt] Cannot start monitoring - Discord window not found\n");
-			return;
-		}
-
-		m_messageMonitor = new ::Discrypt::MessageMonitor();
-
-		// Callback for when encrypted messages are detected
-		auto callback = [](const std::wstring& encryptedText)
-		{
-			OutputDebugStringW(L"[Discrypt] *** CALLBACK: Encrypted message detected ***\n");
-			OutputDebugStringW((L"[Discrypt] Message: " + encryptedText.substr(0, 50) + L"...\n").c_str());
-
-			// TODO: Automatically decrypt and display
-			// For now, just log it
-		};
-
-		if (m_messageMonitor->StartMonitoring(discordWindow, callback))
-		{
-			OutputDebugStringW(L"[Discrypt] Message monitoring started successfully!\n");
-		}
-		else
-		{
-			OutputDebugStringW(L"[Discrypt] Failed to start message monitoring\n");
-			delete m_messageMonitor;
-			m_messageMonitor = nullptr;
-		}
-	}
-
-	void App::StopMessageMonitoring()
-	{
-		if (m_messageMonitor)
-		{
-			m_messageMonitor->StopMonitoring();
-			delete m_messageMonitor;
-			m_messageMonitor = nullptr;
-			OutputDebugStringW(L"[Discrypt] Message monitoring stopped\n");
-		}
-	}
-
 }

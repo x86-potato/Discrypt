@@ -9,96 +9,222 @@
     mc:Ignorable="d"
     Title="Discrypt">
 
-    <Grid Background="{ThemeResource ApplicationPageBackgroundThemeBrush}" 
-          Padding="24">
-        <StackPanel 
-            HorizontalAlignment="Center" 
-            VerticalAlignment="Center"
-            Spacing="20"
-            MaxWidth="400">
+    <NavigationView 
+        x:Name="NavView"
+        IsBackButtonVisible="Collapsed"
+        IsSettingsVisible="False"
+        PaneDisplayMode="Left"
+        SelectionChanged="NavView_SelectionChanged"
+        Loaded="NavView_Loaded"
+        Header="Discrypt">
 
-            <!-- Header -->
-            <TextBlock 
-                Text="Discrypt" 
-                FontSize="28" 
-                FontWeight="SemiBold"
-                HorizontalAlignment="Center"
-                Margin="0,0,0,12"/>
+        <NavigationView.MenuItems>
+            <!-- Home -->
+            <NavigationViewItem 
+                x:Name="HomeMenuItem"
+                Content="Home" 
+                Tag="home">
+                <NavigationViewItem.Icon>
+                    <SymbolIcon Symbol="Home"/>
+                </NavigationViewItem.Icon>
+            </NavigationViewItem>
 
-            <!-- On/Off Switch -->
-            <StackPanel Spacing="8">
-                <TextBlock 
-                    Text="Status" 
-                    FontSize="14" 
-                    FontWeight="SemiBold"/>
-                <ToggleSwitch 
-                    x:Name="StatusSwitch"
-                    OnContent="On" 
-                    OffContent="Off"
-                    Header="Enable Encryption"/>
-            </StackPanel>
+            <NavigationViewItemSeparator/>
 
-            <!-- Key Input Field -->
-            <StackPanel Spacing="8">
-                <TextBlock 
-                    Text="Encryption Key" 
-                    FontSize="14" 
-                    FontWeight="SemiBold"/>
-                <PasswordBox 
-                    x:Name="KeyInput"
-                    PlaceholderText="Enter your encryption key"
-                    MinWidth="350"
-                    PasswordRevealMode="Peek"
-                    PasswordChanged="KeyInput_PasswordChanged"/>
-            </StackPanel>
+            <!-- User list -->
+            <NavigationViewItemHeader Content="Conversations"/>
+            <NavigationViewItem 
+                x:Name="TestUserItem"
+                Content="test" 
+                Tag="test">
+                <NavigationViewItem.Icon>
+                    <SymbolIcon Symbol="Contact"/>
+                </NavigationViewItem.Icon>
+            </NavigationViewItem>
+        </NavigationView.MenuItems>
 
-            <!-- Public Key Display -->
-            <StackPanel Spacing="8">
-                <TextBlock 
-                    Text="Your Public Key" 
-                    FontSize="14" 
-                    FontWeight="SemiBold"/>
-                <TextBox 
-                    x:Name="PublicKeyDisplay"
-                    IsReadOnly="True"
-                    MinWidth="350"
-                    TextWrapping="Wrap"
-                    Text="No key generated yet"/>
-            </StackPanel>
+        <NavigationView.Content>
+            <Grid>
+                <!-- Home View -->
+                <Grid x:Name="HomeView" Visibility="Visible">
+                <StackPanel 
+                    HorizontalAlignment="Center" 
+                    VerticalAlignment="Center"
+                    Spacing="20"
+                    MaxWidth="600">
 
-            <!-- Shared Secret Display -->
-            <StackPanel Spacing="8">
-                <TextBlock 
-                    Text="Shared Secret" 
-                    FontSize="14" 
-                    FontWeight="SemiBold"/>
-                <TextBox 
-                    x:Name="SharedSecretDisplay"
-                    IsReadOnly="True"
-                    MinWidth="350"
-                    TextWrapping="Wrap"
-                    Text="No shared secret yet"/>
-            </StackPanel>
+                    <TextBlock 
+                        Text="🔐 Discrypt" 
+                        FontSize="48" 
+                        FontWeight="Bold"
+                        HorizontalAlignment="Center"/>
 
-            <!-- Refresh Button -->
-            <Button 
-                x:Name="RefreshButton"
-                Content="Refresh Keys"
-                HorizontalAlignment="Center"
-                Click="RefreshButton_Click"/>
+                    <TextBlock 
+                        Text="End-to-End Encrypted Discord Messaging" 
+                        FontSize="18"
+                        HorizontalAlignment="Center"
+                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
 
-            <!-- Message Monitoring Buttons -->
-            <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Spacing="10">
-                <Button 
-                    x:Name="StartMonitorButton"
-                    Content="Start Monitoring"
-                    Click="StartMonitorButton_Click"/>
-                <Button 
-                    x:Name="StopMonitorButton"
-                    Content="Stop Monitoring"
-                    Click="StopMonitorButton_Click"/>
-            </StackPanel>
+                    <Border 
+                        Background="{ThemeResource LayerFillColorDefaultBrush}"
+                        CornerRadius="8"
+                        Padding="24"
+                        Margin="0,20,0,0">
+                        <StackPanel Spacing="16">
+                            <TextBlock 
+                                Text="Current Status" 
+                                FontSize="16" 
+                                FontWeight="SemiBold"/>
 
-        </StackPanel>
-    </Grid>
+                            <StackPanel Spacing="8">
+                                <TextBlock Text="Handshake Status:"/>
+                                <TextBlock 
+                                    x:Name="HomeHandshakeStatus"
+                                    Text="⚠ No handshake - Press Alt+Enter in Discord to initiate"
+                                    Foreground="{ThemeResource SystemAccentColor}"
+                                    TextWrapping="Wrap"/>
+                            </StackPanel>
+
+                            <StackPanel Spacing="8">
+                                <TextBlock Text="Public Key:"/>
+                                <TextBox 
+                                    x:Name="HomePublicKeyDisplay"
+                                    IsReadOnly="True"
+                                    TextWrapping="Wrap"
+                                    Text="No key generated yet"
+                                    MaxHeight="80"/>
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+
+                    <Border 
+                        Background="{ThemeResource LayerFillColorDefaultBrush}"
+                        CornerRadius="8"
+                        Padding="24"
+                        Margin="0,12,0,0">
+                        <StackPanel Spacing="12">
+                            <TextBlock 
+                                Text="How to Use" 
+                                FontSize="16" 
+                                FontWeight="SemiBold"/>
+
+                            <StackPanel Spacing="8">
+                                <TextBlock Text="1. Press Alt+Enter in Discord to initiate handshake" TextWrapping="Wrap"/>
+                                <TextBlock Text="2. Partner receives public key and responds automatically" TextWrapping="Wrap"/>
+                                <TextBlock Text="3. Press Alt+Enter to encrypt messages before sending" TextWrapping="Wrap"/>
+                                <TextBlock Text="4. Copy encrypted messages and paste here to decrypt" TextWrapping="Wrap"/>
+                                <TextBlock Text="5. Select a user from the menu to view message history" TextWrapping="Wrap"/>
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- Message History Management -->
+                    <Border 
+                        Background="{ThemeResource LayerFillColorDefaultBrush}"
+                        CornerRadius="8"
+                        Padding="24"
+                        Margin="0,12,0,0">
+                        <StackPanel Spacing="12">
+                            <TextBlock 
+                                Text="Message History" 
+                                FontSize="16" 
+                                FontWeight="SemiBold"/>
+                            <TextBlock 
+                                Text="Clear all saved message history for all conversations" 
+                                TextWrapping="Wrap"
+                                Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                            <Button 
+                                x:Name="ClearAllMessagesButton"
+                                Content="Clear All Messages"
+                                Click="ClearAllMessages_Click"
+                                HorizontalAlignment="Left"/>
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+            </Grid>
+
+            <!-- Chat View -->
+            <Grid x:Name="ChatView" Visibility="Collapsed">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+
+                <!-- Header showing current user and handshake status -->
+                <StackPanel Grid.Row="0" Padding="24,12" Background="{ThemeResource LayerFillColorDefaultBrush}">
+                    <TextBlock 
+                        x:Name="CurrentUserDisplay"
+                        Text="Select a user from the menu"
+                        FontSize="20"
+                        FontWeight="SemiBold"/>
+                    <TextBlock 
+                        x:Name="HandshakeStatusDisplay"
+                        Text="No handshake"
+                        FontSize="12"
+                        Foreground="{ThemeResource SystemAccentColor}"
+                        Margin="0,4,0,0"/>
+                </StackPanel>
+
+                <!-- Message history for current user -->
+                <ScrollViewer 
+                    Grid.Row="1" 
+                    Padding="24"
+                    VerticalScrollBarVisibility="Auto">
+                    <StackPanel 
+                        x:Name="MessageHistoryPanel"
+                        Spacing="12">
+                        <TextBlock 
+                            Text="No messages yet. Paste encrypted messages below to decrypt."
+                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                            TextAlignment="Center"
+                            Margin="0,40,0,0"/>
+                    </StackPanel>
+                </ScrollViewer>
+
+                <!-- Manual decryption input area -->
+                <Grid 
+                    Grid.Row="2" 
+                    Padding="24,12"
+                    Background="{ThemeResource LayerFillColorDefaultBrush}"
+                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                    BorderThickness="0,1,0,0">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+
+                    <TextBox 
+                        x:Name="EncryptedMessageInput"
+                        Grid.Row="0"
+                        PlaceholderText="Paste encrypted message here ([ENC]:...)"
+                        TextWrapping="Wrap"
+                        AcceptsReturn="True"
+                        MaxHeight="120"
+                        ScrollViewer.VerticalScrollBarVisibility="Auto"
+                        Margin="0,0,0,12"/>
+
+                    <StackPanel 
+                        Grid.Row="1"
+                        Orientation="Horizontal"
+                        Spacing="12"
+                        HorizontalAlignment="Right">
+                        <Button 
+                            x:Name="ClearButton"
+                            Content="Clear"
+                            Click="ClearButton_Click"
+                            Style="{StaticResource AccentButtonStyle}"/>
+                        <Button 
+                            x:Name="DecryptButton"
+                            Content="🔓 Decrypt &amp; Save"
+                            Click="DecryptButton_Click"
+                            Style="{StaticResource AccentButtonStyle}"/>
+                    </StackPanel>
+                </Grid>
+            </Grid>
+            <!-- End Chat View -->
+            </Grid>
+            <!-- End Wrapper Grid -->
+        </NavigationView.Content>
+    </NavigationView>
 </Window>
