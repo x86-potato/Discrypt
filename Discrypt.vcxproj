@@ -121,6 +121,9 @@
     <Manifest Include="app.manifest" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="CryptoManager.h" />
+    <ClInclude Include="DiscordInterop.h" />
+    <ClInclude Include="KeyboardHook.h" />
     <ClInclude Include="pch.h" />
     <ClInclude Include="App.xaml.h">
       <DependentUpon>App.xaml</DependentUpon>
@@ -134,6 +137,9 @@
     <Page Include="MainWindow.xaml" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="CryptoManager.cpp" />
+    <ClCompile Include="DiscordInterop.cpp" />
+    <ClCompile Include="KeyboardHook.cpp" />
     <ClCompile Include="pch.cpp">
       <PrecompiledHeader>Create</PrecompiledHeader>
     </ClCompile>
@@ -181,6 +187,7 @@
   <ItemGroup>
     <None Include="DH_KEY_EXCHANGE_GUIDE.md" />
     <None Include="packages.config" />
+    <None Include="REFACTORED_STRUCTURE.md" />
   </ItemGroup>
   <PropertyGroup Condition="'$(DisableHasPackageAndPublishMenuAddedByProject)'!='true' and '$(EnableMsixTooling)'=='true'">
     <HasPackageAndPublishMenu>true</HasPackageAndPublishMenu>

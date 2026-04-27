@@ -3,6 +3,7 @@
 #if __has_include("MainWindow.g.cpp")
 #include "MainWindow.g.cpp"
 #endif
+#include "CryptoManager.h"
 
 using namespace winrt;
 using namespace Microsoft::UI::Xaml;
@@ -10,15 +11,9 @@ using namespace Microsoft::UI::Xaml;
 // To learn more about WinUI, the WinUI project structure,
 // and more about our project templates, see: http://aka.ms/winui-project-info.
 
-// Extern declaration to access the global encryption key from App.xaml.cpp
+// Extern declarations
 extern std::wstring g_encryptionKey;
-
-// Forward declarations for functions in App.xaml.cpp
-namespace winrt::Discrypt::implementation
-{
-    std::wstring GetPublicKeyHex();
-    std::wstring GetSharedSecretHex();
-}
+extern ::Discrypt::EncryptionSession g_session;
 
 namespace winrt::Discrypt::implementation
 {
@@ -60,11 +55,11 @@ namespace winrt::Discrypt::implementation
     void MainWindow::RefreshButton_Click(IInspectable const& sender, RoutedEventArgs const& e)
     {
         // Update public key display
-        std::wstring publicKey = GetPublicKeyHex();
+        std::wstring publicKey = ::Discrypt::CryptoManager::GetPublicKeyHex(g_session);
         PublicKeyDisplay().Text(publicKey);
 
         // Update shared secret display
-        std::wstring sharedSecret = GetSharedSecretHex();
+        std::wstring sharedSecret = ::Discrypt::CryptoManager::GetSharedSecretHex(g_session);
         SharedSecretDisplay().Text(sharedSecret);
 
         OutputDebugStringW(L"[Discrypt] Keys refreshed in UI\n");
