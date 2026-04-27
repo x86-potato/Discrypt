@@ -45,15 +45,26 @@ namespace winrt::Discrypt::implementation
 			// Generate our key pair if we haven't already
 			if (!g_session.hPrivateKey)
 			{
+				OutputDebugStringW(L"[Discrypt] No existing key pair, generating new one...\n");
 				if (!::Discrypt::CryptoManager::GenerateDHKeyPair(g_session))
 				{
 					OutputDebugStringW(L"[Discrypt] Failed to generate key pair\n");
 					return;
 				}
 			}
+			else
+			{
+				OutputDebugStringW(L"[Discrypt] Using existing key pair\n");
+			}
 
 			// Derive shared secret
-			if (!::Discrypt::CryptoManager::DeriveSharedSecret(g_session, g_session.partnerPublicKeyBlob))
+			OutputDebugStringW(L"[Discrypt] About to derive shared secret (RESPONDER)...\n");
+			bool derivationSuccess = ::Discrypt::CryptoManager::DeriveSharedSecret(g_session, g_session.partnerPublicKeyBlob);
+			OutputDebugStringW((L"[Discrypt] Derivation result: " + std::to_wstring(derivationSuccess) + L"\n").c_str());
+			OutputDebugStringW((L"[Discrypt] Shared secret data size after derivation: " + 
+				std::to_wstring(g_session.sharedSecretData.size()) + L" bytes\n").c_str());
+
+			if (!derivationSuccess)
 			{
 				OutputDebugStringW(L"[Discrypt] Failed to derive shared secret\n");
 				return;

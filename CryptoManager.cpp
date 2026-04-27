@@ -223,8 +223,14 @@ namespace Discrypt
 
 	std::wstring CryptoManager::GetSharedSecretHex(const EncryptionSession& session)
 	{
+		OutputDebugStringW((L"[Discrypt] GetSharedSecretHex called, data size: " + 
+			std::to_wstring(session.sharedSecretData.size()) + L" bytes\n").c_str());
+
 		if (session.sharedSecretData.empty())
+		{
+			OutputDebugStringW(L"[Discrypt] GetSharedSecretHex: No shared secret data!\n");
 			return L"No shared secret";
+		}
 
 		std::wstringstream ss;
 		ss << std::hex << std::setfill(L'0');
