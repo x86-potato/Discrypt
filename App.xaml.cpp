@@ -18,6 +18,7 @@ std::wstring g_encryptionKey = L""; // Global storage for the password/key
 Discrypt::EncryptionSession g_session;
 winrt::Discrypt::implementation::MainWindow* g_mainWindow = nullptr;
 std::wstring g_userHandle = L""; // User's @handle for identification
+std::wstring g_partnerHandle = L""; // Current conversation partner's @handle
 
 namespace winrt::Discrypt::implementation
 {
@@ -66,78 +67,9 @@ namespace winrt::Discrypt::implementation
 		}
 	}
 
-	/// <summary>
-	/// Prompt user for their Discord handle
-	/// </summary>
-	winrt::fire_and_forget App::PromptForUserHandle()
-	{
-		using namespace winrt::Microsoft::UI::Xaml;
-		using namespace winrt::Microsoft::UI::Xaml::Controls;
-
-		if (!window.Content())
-		{
-			co_return;
-		}
-
-		ContentDialog dialog;
-		dialog.XamlRoot(window.Content().XamlRoot());
-		dialog.Title(winrt::box_value(L"Welcome to Discrypt"));
-		dialog.PrimaryButtonText(L"Save");
-		dialog.IsPrimaryButtonEnabled(false);
-		dialog.DefaultButton(ContentDialogButton::Primary);
-
-		// Create input box
-		TextBox handleInput;
-		handleInput.PlaceholderText(L"@username");
-		handleInput.Margin({ 0, 12, 0, 0 });
-
-		// FIX 1: Create a weak reference to break the COM circular reference cycle
-		winrt::weak_ref<ContentDialog> weakDialog = dialog;
-
-		// FIX 2: Save the event token so we can revoke it later, and use the 'sender' argument
-		auto textChangedToken = handleInput.TextChanged([weakDialog](winrt::Windows::Foundation::IInspectable const& sender, auto const&)
-			{
-				// Resolve weak reference safely
-				if (auto strongDialog = weakDialog.get())
-				{
-					// Cast the sender back to a TextBox instead of capturing it
-					auto box = sender.as<TextBox>();
-					std::wstring text = box.Text().c_str();
-					strongDialog.IsPrimaryButtonEnabled(!text.empty());
-				}
-			});
-
-		// Add input to content
-		StackPanel panel;
-		TextBlock contentText;
-		contentText.Text(L"Please enter your Discord handle (e.g., @username) for message identification:");
-		contentText.TextWrapping(TextWrapping::Wrap);
-		panel.Children().Append(contentText);
-		panel.Children().Append(handleInput);
-		dialog.Content(panel);
-
-		// Await the dialog
-		auto result = co_await dialog.ShowAsync();
-
-		// FIX 3: Detach visual tree and revoke events before local objects are destroyed
-		handleInput.TextChanged(textChangedToken);
-		dialog.Content(nullptr);
-
-		if (result == ContentDialogResult::Primary)
-		{
-			std::wstring handle = handleInput.Text().c_str();
-			// Ensure handle starts with @
-			if (!handle.empty() && handle[0] != L'@')
-			{
-				handle = L"@" + handle;
-			}
-			g_userHandle = handle;
-			SaveUserHandle(g_userHandle);
-			OutputDebugStringW((L"[Discrypt] User handle set to: " + g_userHandle + L"\n").c_str());
-		}
-
-		co_return;
-	}
+	// NOTE: PromptForUserHandle() function has been removed.
+	// Username is now entered and persisted via the homepage UI (UserHandleInput TextBox).
+	// The problematic ContentDialog approach caused COM circular reference issues.
 
 	/// <summary>
 	/// Handles Alt+Enter key press in Discord
@@ -158,9 +90,11 @@ namespace winrt::Discrypt::implementation
 			// Format: HANDSHAKE_INIT:@handle:publickey
 			size_t firstColon = originalText.find(L':');
 			size_t secondColon = originalText.find(L':', firstColon + 1);
+			std::wstring partnerHandle;
 			if (firstColon != std::wstring::npos && secondColon != std::wstring::npos)
 			{
-				std::wstring partnerHandle = originalText.substr(firstColon + 1, secondColon - firstColon - 1);
+				partnerHandle = originalText.substr(firstColon + 1, secondColon - firstColon - 1);
+				g_partnerHandle = partnerHandle; // Store globally for message logging
 				std::wstring partnerKeyBase64 = originalText.substr(secondColon + 1);
 				g_session.partnerPublicKeyBlob = ::Discrypt::CryptoManager::Base64Decode(partnerKeyBase64);
 
@@ -209,6 +143,7 @@ namespace winrt::Discrypt::implementation
 			// Update UI
 			if (g_mainWindow)
 			{
+				g_mainWindow->AddConversation(winrt::hstring(partnerHandle));
 				g_mainWindow->UpdateHandshakeStatus();
 			}
 		}
@@ -221,9 +156,12 @@ namespace winrt::Discrypt::implementation
 			// Format: HANDSHAKE_RESPONSE:@handle:publickey
 			size_t firstColon = originalText.find(L':');
 			size_t secondColon = originalText.find(L':', firstColon + 1);
+
+			std::wstring partnerHandle;
 			if (firstColon != std::wstring::npos && secondColon != std::wstring::npos)
 			{
-				std::wstring partnerHandle = originalText.substr(firstColon + 1, secondColon - firstColon - 1);
+				partnerHandle = originalText.substr(firstColon + 1, secondColon - firstColon - 1);
+				g_partnerHandle = partnerHandle; // Store globally for message logging
 				std::wstring partnerKeyBase64 = originalText.substr(secondColon + 1);
 				g_session.partnerPublicKeyBlob = ::Discrypt::CryptoManager::Base64Decode(partnerKeyBase64);
 
@@ -247,6 +185,7 @@ namespace winrt::Discrypt::implementation
 			// Update UI
 			if (g_mainWindow)
 			{
+				g_mainWindow->AddConversation(winrt::hstring(partnerHandle));
 				g_mainWindow->UpdateHandshakeStatus();
 			}
 
@@ -322,6 +261,14 @@ namespace winrt::Discrypt::implementation
 		}
 		else if (g_session.state == ::Discrypt::EncryptionSession::State::HandshakeComplete)
 		{
+			// Check if user handle is set before allowing encryption
+			if (g_userHandle.empty())
+			{
+				OutputDebugStringW(L"[Discrypt] Cannot encrypt message - user handle not set!\n");
+				OutputDebugStringW(L"[Discrypt] Please enter your Discord handle on the Home page first.\n");
+				return;
+			}
+
 			// Handshake complete - encrypt the message
 			OutputDebugStringW(L"[Discrypt] Encrypting message...\n");
 			OutputDebugStringW((L"[Discrypt] Shared Secret: " + ::Discrypt::CryptoManager::GetSharedSecretHex(g_session) + L"\n").c_str());
@@ -354,9 +301,10 @@ namespace winrt::Discrypt::implementation
 			}
 
 			// Add the original (decrypted) message to history
-			if (g_mainWindow)
+			if (g_mainWindow && !g_partnerHandle.empty())
 			{
-				g_mainWindow->AddSentMessageToHistory(g_userHandle, originalText);
+				// Log to partner's conversation, not our own handle
+				g_mainWindow->AddSentMessageToHistory(g_partnerHandle, originalText);
 			}
 		}
 		else
@@ -422,7 +370,7 @@ namespace winrt::Discrypt::implementation
 		auto appWindow = window.AppWindow();
 		if (appWindow)
 		{
-			appWindow.Resize({ 480, 700 });
+			appWindow.Resize({ 700, 1100 });
 		}
 
 		window.Activate();
@@ -432,6 +380,18 @@ namespace winrt::Discrypt::implementation
 		if (!g_userHandle.empty())
 		{
 			OutputDebugStringW((L"[Discrypt] Using stored handle: " + g_userHandle + L"\n").c_str());
+			// Populate the UserHandleInput on the home page
+			if (mainWindowImpl)
+			{
+				mainWindowImpl->DispatcherQueue().TryEnqueue([mainWindowImpl]()
+				{
+					mainWindowImpl->UserHandleInput().Text(g_userHandle);
+				});
+			}
+		}
+		else
+		{
+			OutputDebugStringW(L"[Discrypt] No stored handle found. Please enter your Discord handle on the Home page.\n");
 		}
 
 		// Install the keyboard hook with our callback

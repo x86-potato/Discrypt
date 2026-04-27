@@ -10,7 +10,7 @@ namespace winrt::Discrypt::implementation
         ~App();
 
         void OnLaunched(Microsoft::UI::Xaml::LaunchActivatedEventArgs const&);
-        winrt::fire_and_forget PromptForUserHandle();
+        // PromptForUserHandle() is deprecated - username is now entered via homepage UI
 
     private:
         winrt::Microsoft::UI::Xaml::Window window{ nullptr };

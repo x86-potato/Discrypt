@@ -12,19 +12,29 @@ namespace Discrypt
 	{
 		if (data.empty()) return L"";
 
+		// Get required buffer size (includes null terminator)
 		DWORD base64Length = 0;
-		CryptBinaryToStringW(data.data(), static_cast<DWORD>(data.size()),
-			CRYPT_STRING_BASE64 | CRYPT_STRING_NOCRLF, nullptr, &base64Length);
+		if (!CryptBinaryToStringW(data.data(), static_cast<DWORD>(data.size()),
+			CRYPT_STRING_BASE64 | CRYPT_STRING_NOCRLF, nullptr, &base64Length))
+		{
+			OutputDebugStringW(L"[Discrypt] Base64Encode: Failed to get buffer size\n");
+			return L"";
+		}
 
-		std::wstring base64(base64Length, L'\0');
-		CryptBinaryToStringW(data.data(), static_cast<DWORD>(data.size()),
-			CRYPT_STRING_BASE64 | CRYPT_STRING_NOCRLF, base64.data(), &base64Length);
+		// Allocate buffer with exact size needed
+		std::vector<wchar_t> buffer(base64Length);
+		DWORD actualLength = base64Length;
 
-		// Remove null terminator if present
-		if (!base64.empty() && base64.back() == L'\0')
-			base64.pop_back();
+		if (!CryptBinaryToStringW(data.data(), static_cast<DWORD>(data.size()),
+			CRYPT_STRING_BASE64 | CRYPT_STRING_NOCRLF, buffer.data(), &actualLength))
+		{
+			OutputDebugStringW(L"[Discrypt] Base64Encode: Failed to encode\n");
+			return L"";
+		}
 
-		return base64;
+		// Create string from buffer, excluding null terminator if present
+		std::wstring result(buffer.data(), actualLength > 0 && buffer[actualLength - 1] == L'\0' ? actualLength - 1 : actualLength);
+		return result;
 	}
 
 	std::vector<BYTE> CryptoManager::Base64Decode(const std::wstring& base64)
@@ -342,7 +352,9 @@ namespace Discrypt
 		}
 
 		// Combine: IV (12 bytes) + Ciphertext + Tag (16 bytes)
+		// Reserve capacity to avoid reallocations
 		std::vector<BYTE> combined;
+		combined.reserve(iv.size() + ciphertext.size() + tag.size());
 		combined.insert(combined.end(), iv.begin(), iv.end());
 		combined.insert(combined.end(), ciphertext.begin(), ciphertext.end());
 		combined.insert(combined.end(), tag.begin(), tag.end());

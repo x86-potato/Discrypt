@@ -282,7 +282,9 @@ namespace Discrypt
 			SendInput(2, charInputs, sizeof(INPUT));
 		}
 
-		OutputDebugStringW((L"[Discrypt] WriteTextBox: Successfully simulated typing: " + text + L"\n").c_str());
+		// Limit debug output to prevent memory warnings with long encrypted messages
+		std::wstring debugText = text.length() > 100 ? text.substr(0, 100) + L"... [+" + std::to_wstring(text.length() - 100) + L" more chars]" : text;
+		OutputDebugStringW((L"[Discrypt] WriteTextBox: Successfully simulated typing: " + debugText + L"\n").c_str());
 
 		CoUninitialize();
 		return true;

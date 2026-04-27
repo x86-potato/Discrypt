@@ -122,6 +122,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="CryptoManager.h" />
+    <ClInclude Include="DatabaseManager.h" />
     <ClInclude Include="DiscordInterop.h" />
     <ClInclude Include="KeyboardHook.h" />
     <ClInclude Include="pch.h" />
@@ -185,9 +186,11 @@
     the Windows App SDK Nuget package has not yet been restored.
   -->
   <ItemGroup>
+    <None Include="CHANGES.md" />
     <None Include="DH_KEY_EXCHANGE_GUIDE.md" />
     <None Include="packages.config" />
     <None Include="REFACTORED_STRUCTURE.md" />
+    <None Include="SQLITE_INTEGRATION.md" />
   </ItemGroup>
   <PropertyGroup Condition="'$(DisableHasPackageAndPublishMenuAddedByProject)'!='true' and '$(EnableMsixTooling)'=='true'">
     <HasPackageAndPublishMenu>true</HasPackageAndPublishMenu>

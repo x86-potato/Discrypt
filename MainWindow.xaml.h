@@ -40,9 +40,11 @@ namespace winrt::Discrypt::implementation
         void LoadMessagesFromFile(const std::wstring& user);
         void UpdateHandshakeStatus();
         void UpdateHomeView();
-        void AddSentMessageToHistory(const std::wstring& senderHandle, const std::wstring& message);
-        void AddReceivedMessageToHistory(const std::wstring& senderHandle, const std::wstring& message);
+		void AddSentMessageToHistory(const std::wstring& senderHandle, const std::wstring& message);
+		void AddReceivedMessageToHistory(const std::wstring& senderHandle, const std::wstring& message);
 		void AddUserButton_Click(winrt::Windows::Foundation::IInspectable const& sender, winrt::Microsoft::UI::Xaml::RoutedEventArgs const& e);
+		void AddConversation(winrt::hstring const& handle);
+		void UserHandleInput_TextChanged(winrt::Windows::Foundation::IInspectable const& sender, winrt::Microsoft::UI::Xaml::Controls::TextChangedEventArgs const& e);
 
     private:
         std::wstring m_currentUser;

@@ -16,10 +16,16 @@ using namespace winrt;
 using namespace Microsoft::UI::Xaml;
 using namespace Microsoft::UI::Xaml::Controls;
 
-// Extern declarations
+// External declarations
 extern std::wstring g_encryptionKey;
 extern ::Discrypt::EncryptionSession g_session;
 extern std::wstring g_userHandle;
+
+// Forward declarations for App.xaml.cpp functions
+namespace winrt::Discrypt::implementation
+{
+    void SaveUserHandle(const std::wstring& handle);
+}
 
 namespace winrt::Discrypt::implementation
 {
@@ -574,4 +580,64 @@ namespace winrt::Discrypt::implementation
 
     }
 
+    void MainWindow::AddConversation(winrt::hstring const& handle)
+    {
+        // 1. Check if this user is already in the list to prevent duplicates
+        for (auto const& item : NavView().MenuItems())
+        {
+            if (auto navItem = item.try_as<Controls::NavigationViewItem>())
+            {
+                if (navItem.Tag() && unbox_value<hstring>(navItem.Tag()) == handle)
+                {
+                    return; // User already exists, do nothing
+                }
+            }
+        }
+
+        // 2. Create the new Navigation View Item
+        Controls::NavigationViewItem newItem;
+        newItem.Content(box_value(handle));
+        newItem.Tag(box_value(handle));
+
+        Controls::SymbolIcon icon;
+        icon.Symbol(Controls::Symbol::Contact);
+        newItem.Icon(icon);
+
+        // 3. Append to the menu
+        NavView().MenuItems().Append(newItem);
+    }
+
+    void MainWindow::UserHandleInput_TextChanged(winrt::Windows::Foundation::IInspectable const&, winrt::Microsoft::UI::Xaml::Controls::TextChangedEventArgs const&)
+    {
+        std::wstring handle = UserHandleInput().Text().c_str();
+
+        // Trim whitespace
+        handle.erase(handle.find_last_not_of(L" \t\n\r") + 1);
+        handle.erase(0, handle.find_first_not_of(L" \t\n\r"));
+
+        if (!handle.empty())
+        {
+            // Ensure handle starts with @
+            if (handle[0] != L'@')
+            {
+                handle = L"@" + handle;
+                UserHandleInput().Text(handle);
+                // Move cursor to end
+                UserHandleInput().Select(static_cast<int>(handle.length()), 0);
+            }
+
+            // Update global handle
+            g_userHandle = handle;
+
+            // Save to persistent storage
+            SaveUserHandle(g_userHandle);
+
+            OutputDebugStringW((L"[Discrypt] User handle updated to: " + g_userHandle + L"\n").c_str());
+        }
+        else
+        {
+            g_userHandle = L"";
+        }
+    }
 }
+

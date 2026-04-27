@@ -21,6 +21,7 @@
     <ClInclude Include="DiscordInterop.h" />
     <ClInclude Include="KeyboardHook.h" />
     <ClInclude Include="CryptoManager.h" />
+    <ClInclude Include="DatabaseManager.h" />
   </ItemGroup>
   <ItemGroup>
     <Image Include="Assets\Wide310x150Logo.scale-200.png">
@@ -63,6 +64,8 @@
     <None Include="packages.config" />
     <None Include="DH_KEY_EXCHANGE_GUIDE.md" />
     <None Include="REFACTORED_STRUCTURE.md" />
+    <None Include="CHANGES.md" />
+    <None Include="SQLITE_INTEGRATION.md" />
   </ItemGroup>
   <ItemGroup>
     <Natvis Include="$(MSBuildThisFileDirectory)..\..\natvis\wil.natvis" />
