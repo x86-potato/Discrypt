@@ -10,9 +10,10 @@ namespace winrt::Discrypt::implementation
         ~App();
 
         void OnLaunched(Microsoft::UI::Xaml::LaunchActivatedEventArgs const&);
-        void PromptForUserHandle();
+        winrt::fire_and_forget PromptForUserHandle();
 
     private:
         winrt::Microsoft::UI::Xaml::Window window{ nullptr };
+
     };
 }

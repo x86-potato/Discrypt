@@ -19,7 +19,6 @@
         Header="Discrypt">
 
         <NavigationView.MenuItems>
-            <!-- Home -->
             <NavigationViewItem 
                 x:Name="HomeMenuItem"
                 Content="Home" 
@@ -31,7 +30,6 @@
 
             <NavigationViewItemSeparator/>
 
-            <!-- User list -->
             <NavigationViewItemHeader Content="Conversations"/>
             <NavigationViewItem 
                 x:Name="TestUserItem"
@@ -45,156 +43,189 @@
 
         <NavigationView.Content>
             <Grid>
-                <!-- Home View -->
                 <Grid x:Name="HomeView" Visibility="Visible">
-                <StackPanel 
+                    <StackPanel 
                     HorizontalAlignment="Center" 
                     VerticalAlignment="Center"
                     Spacing="20"
                     MaxWidth="600">
 
-                    <TextBlock 
+                        <TextBlock 
                         Text="🔐 Discrypt" 
                         FontSize="48" 
                         FontWeight="Bold"
                         HorizontalAlignment="Center"/>
 
-                    <TextBlock 
+                        <TextBlock 
                         Text="End-to-End Encrypted Discord Messaging" 
                         FontSize="18"
                         HorizontalAlignment="Center"
                         Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
 
-                    <Border 
+                        <Border 
                         Background="{ThemeResource LayerFillColorDefaultBrush}"
                         CornerRadius="8"
                         Padding="24"
                         Margin="0,20,0,0">
-                        <StackPanel Spacing="16">
-                            <TextBlock 
+                            <StackPanel Spacing="16">
+                                <TextBlock 
                                 Text="Current Status" 
                                 FontSize="16" 
                                 FontWeight="SemiBold"/>
 
-                            <StackPanel Spacing="8">
-                                <TextBlock Text="Handshake Status:"/>
-                                <TextBlock 
+                                <StackPanel Spacing="8">
+                                    <TextBlock Text="Handshake Status:"/>
+                                    <TextBlock 
                                     x:Name="HomeHandshakeStatus"
                                     Text="⚠ No handshake - Press Alt+Enter in Discord to initiate"
                                     Foreground="{ThemeResource SystemAccentColor}"
                                     TextWrapping="Wrap"/>
-                            </StackPanel>
+                                </StackPanel>
 
-                            <StackPanel Spacing="8">
-                                <TextBlock Text="Public Key:"/>
-                                <TextBox 
+                                <StackPanel Spacing="8">
+                                    <TextBlock Text="Public Key:"/>
+                                    <TextBox 
                                     x:Name="HomePublicKeyDisplay"
                                     IsReadOnly="True"
                                     TextWrapping="Wrap"
                                     Text="No key generated yet"
                                     MaxHeight="80"/>
+                                </StackPanel>
                             </StackPanel>
-                        </StackPanel>
-                    </Border>
+                        </Border>
 
-                    <Border 
+                        <Border 
                         Background="{ThemeResource LayerFillColorDefaultBrush}"
                         CornerRadius="8"
                         Padding="24"
                         Margin="0,12,0,0">
-                        <StackPanel Spacing="12">
-                            <TextBlock 
+                            <StackPanel Spacing="12">
+                                <TextBlock 
+                                Text="Start New Conversation" 
+                                FontSize="16" 
+                                FontWeight="SemiBold"/>
+
+                                <TextBlock 
+                                Text="Enter your discord handle to allow for communication" 
+                                TextWrapping="Wrap"
+                                Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+
+                                <Grid ColumnSpacing="12">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+
+                                    <TextBox 
+                                    x:Name="DiscordHandleInput"
+                                    Grid.Column="0"
+                                    PlaceholderText="e.g. @username"
+                                    VerticalAlignment="Center"/>
+
+                                    <Button 
+                                    x:Name="AddUserButton"
+                                    Grid.Column="1"
+                                    Content="Add User"
+                                    Click="AddUserButton_Click"
+                                    Style="{StaticResource AccentButtonStyle}"
+                                    VerticalAlignment="Center"/>
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+
+                        <Border 
+                        Background="{ThemeResource LayerFillColorDefaultBrush}"
+                        CornerRadius="8"
+                        Padding="24"
+                        Margin="0,12,0,0">
+                            <StackPanel Spacing="12">
+                                <TextBlock 
                                 Text="How to Use" 
                                 FontSize="16" 
                                 FontWeight="SemiBold"/>
 
-                            <StackPanel Spacing="8">
-                                <TextBlock Text="1. Press Alt+Enter in Discord to initiate handshake" TextWrapping="Wrap"/>
-                                <TextBlock Text="2. Partner receives public key and responds automatically" TextWrapping="Wrap"/>
-                                <TextBlock Text="3. Press Alt+Enter to encrypt messages before sending" TextWrapping="Wrap"/>
-                                <TextBlock Text="4. Copy encrypted messages and paste here to decrypt" TextWrapping="Wrap"/>
-                                <TextBlock Text="5. Select a user from the menu to view message history" TextWrapping="Wrap"/>
+                                <StackPanel Spacing="8">
+                                    <TextBlock Text="1. Press Alt+Enter in Discord to initiate handshake" TextWrapping="Wrap"/>
+                                    <TextBlock Text="2. Partner receives public key and responds automatically" TextWrapping="Wrap"/>
+                                    <TextBlock Text="3. Press Alt+Enter to encrypt messages before sending" TextWrapping="Wrap"/>
+                                    <TextBlock Text="4. Copy encrypted messages and paste here to decrypt" TextWrapping="Wrap"/>
+                                    <TextBlock Text="5. Select a user from the menu to view message history" TextWrapping="Wrap"/>
+                                </StackPanel>
                             </StackPanel>
-                        </StackPanel>
-                    </Border>
+                        </Border>
 
-                    <!-- Message History Management -->
-                    <Border 
+                        <Border 
                         Background="{ThemeResource LayerFillColorDefaultBrush}"
                         CornerRadius="8"
                         Padding="24"
                         Margin="0,12,0,0">
-                        <StackPanel Spacing="12">
-                            <TextBlock 
+                            <StackPanel Spacing="12">
+                                <TextBlock 
                                 Text="Message History" 
                                 FontSize="16" 
                                 FontWeight="SemiBold"/>
-                            <TextBlock 
+                                <TextBlock 
                                 Text="Clear all saved message history for all conversations" 
                                 TextWrapping="Wrap"
                                 Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
-                            <Button 
+                                <Button 
                                 x:Name="ClearAllMessagesButton"
                                 Content="Clear All Messages"
                                 Click="ClearAllMessages_Click"
                                 HorizontalAlignment="Left"/>
-                        </StackPanel>
-                    </Border>
-                </StackPanel>
-            </Grid>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                </Grid>
 
-            <!-- Chat View -->
-            <Grid x:Name="ChatView" Visibility="Collapsed">
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="*"/>
-                    <RowDefinition Height="Auto"/>
-                </Grid.RowDefinitions>
+                <Grid x:Name="ChatView" Visibility="Collapsed">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
 
-                <!-- Header showing current user and handshake status -->
-                <StackPanel Grid.Row="0" Padding="24,12" Background="{ThemeResource LayerFillColorDefaultBrush}">
-                    <TextBlock 
+                    <StackPanel Grid.Row="0" Padding="24,12" Background="{ThemeResource LayerFillColorDefaultBrush}">
+                        <TextBlock 
                         x:Name="CurrentUserDisplay"
                         Text="Select a user from the menu"
                         FontSize="20"
                         FontWeight="SemiBold"/>
-                    <TextBlock 
+                        <TextBlock 
                         x:Name="HandshakeStatusDisplay"
                         Text="No handshake"
                         FontSize="12"
                         Foreground="{ThemeResource SystemAccentColor}"
                         Margin="0,4,0,0"/>
-                </StackPanel>
+                    </StackPanel>
 
-                <!-- Message history for current user -->
-                <ScrollViewer 
+                    <ScrollViewer 
                     Grid.Row="1" 
                     Padding="24"
                     VerticalScrollBarVisibility="Auto">
-                    <StackPanel 
+                        <StackPanel 
                         x:Name="MessageHistoryPanel"
                         Spacing="12">
-                        <TextBlock 
+                            <TextBlock 
                             Text="No messages yet. Paste encrypted messages below to decrypt."
                             Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                             TextAlignment="Center"
                             Margin="0,40,0,0"/>
-                    </StackPanel>
-                </ScrollViewer>
+                        </StackPanel>
+                    </ScrollViewer>
 
-                <!-- Manual decryption input area -->
-                <Grid 
+                    <Grid 
                     Grid.Row="2" 
                     Padding="24,12"
                     Background="{ThemeResource LayerFillColorDefaultBrush}"
                     BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
                     BorderThickness="0,1,0,0">
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/>
-                    </Grid.RowDefinitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                        </Grid.RowDefinitions>
 
-                    <TextBox 
+                        <TextBox 
                         x:Name="EncryptedMessageInput"
                         Grid.Row="0"
                         PlaceholderText="Paste encrypted message here ([ENC]:...)"
@@ -204,27 +235,25 @@
                         ScrollViewer.VerticalScrollBarVisibility="Auto"
                         Margin="0,0,0,12"/>
 
-                    <StackPanel 
+                        <StackPanel 
                         Grid.Row="1"
                         Orientation="Horizontal"
                         Spacing="12"
                         HorizontalAlignment="Right">
-                        <Button 
+                            <Button 
                             x:Name="ClearButton"
                             Content="Clear"
                             Click="ClearButton_Click"
                             Style="{StaticResource AccentButtonStyle}"/>
-                        <Button 
+                            <Button 
                             x:Name="DecryptButton"
                             Content="🔓 Decrypt &amp; Save"
                             Click="DecryptButton_Click"
                             Style="{StaticResource AccentButtonStyle}"/>
-                    </StackPanel>
+                        </StackPanel>
+                    </Grid>
                 </Grid>
             </Grid>
-            <!-- End Chat View -->
-            </Grid>
-            <!-- End Wrapper Grid -->
         </NavigationView.Content>
     </NavigationView>
 </Window>

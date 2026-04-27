@@ -562,4 +562,16 @@ namespace winrt::Discrypt::implementation
                 }
             });
     }
+    void MainWindow::AddUserButton_Click(winrt::Windows::Foundation::IInspectable const& sender, winrt::Microsoft::UI::Xaml::RoutedEventArgs const& args)
+    {
+        // 1. Get the text from the input box
+        hstring newHandle = DiscordHandleInput().Text();
+
+        if (!newHandle.empty())
+        {
+			g_userHandle = newHandle.c_str();
+        }
+
+    }
+
 }

@@ -42,6 +42,7 @@ namespace winrt::Discrypt::implementation
         void UpdateHomeView();
         void AddSentMessageToHistory(const std::wstring& senderHandle, const std::wstring& message);
         void AddReceivedMessageToHistory(const std::wstring& senderHandle, const std::wstring& message);
+		void AddUserButton_Click(winrt::Windows::Foundation::IInspectable const& sender, winrt::Microsoft::UI::Xaml::RoutedEventArgs const& e);
 
     private:
         std::wstring m_currentUser;

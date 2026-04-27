@@ -69,10 +69,15 @@ namespace winrt::Discrypt::implementation
 	/// <summary>
 	/// Prompt user for their Discord handle
 	/// </summary>
-	void App::PromptForUserHandle()
+	winrt::fire_and_forget App::PromptForUserHandle()
 	{
 		using namespace winrt::Microsoft::UI::Xaml;
 		using namespace winrt::Microsoft::UI::Xaml::Controls;
+
+		if (!window.Content())
+		{
+			co_return;
+		}
 
 		ContentDialog dialog;
 		dialog.XamlRoot(window.Content().XamlRoot());
@@ -86,11 +91,20 @@ namespace winrt::Discrypt::implementation
 		handleInput.PlaceholderText(L"@username");
 		handleInput.Margin({ 0, 12, 0, 0 });
 
-		// Enable button only when input is not empty
-		handleInput.TextChanged([dialog, handleInput](auto const&, auto const&) mutable
+		// FIX 1: Create a weak reference to break the COM circular reference cycle
+		winrt::weak_ref<ContentDialog> weakDialog = dialog;
+
+		// FIX 2: Save the event token so we can revoke it later, and use the 'sender' argument
+		auto textChangedToken = handleInput.TextChanged([weakDialog](winrt::Windows::Foundation::IInspectable const& sender, auto const&)
 			{
-				std::wstring text = handleInput.Text().c_str();
-				dialog.IsPrimaryButtonEnabled(!text.empty());
+				// Resolve weak reference safely
+				if (auto strongDialog = weakDialog.get())
+				{
+					// Cast the sender back to a TextBox instead of capturing it
+					auto box = sender.as<TextBox>();
+					std::wstring text = box.Text().c_str();
+					strongDialog.IsPrimaryButtonEnabled(!text.empty());
+				}
 			});
 
 		// Add input to content
@@ -102,23 +116,27 @@ namespace winrt::Discrypt::implementation
 		panel.Children().Append(handleInput);
 		dialog.Content(panel);
 
-		auto asyncOp = dialog.ShowAsync();
-		asyncOp.Completed([handleInput](auto const& sender, auto const&)
+		// Await the dialog
+		auto result = co_await dialog.ShowAsync();
+
+		// FIX 3: Detach visual tree and revoke events before local objects are destroyed
+		handleInput.TextChanged(textChangedToken);
+		dialog.Content(nullptr);
+
+		if (result == ContentDialogResult::Primary)
+		{
+			std::wstring handle = handleInput.Text().c_str();
+			// Ensure handle starts with @
+			if (!handle.empty() && handle[0] != L'@')
 			{
-				auto result = sender.GetResults();
-				if (result == ContentDialogResult::Primary)
-				{
-					std::wstring handle = handleInput.Text().c_str();
-					// Ensure handle starts with @
-					if (!handle.empty() && handle[0] != L'@')
-					{
-						handle = L"@" + handle;
-					}
-					g_userHandle = handle;
-					SaveUserHandle(g_userHandle);
-					OutputDebugStringW((L"[Discrypt] User handle set to: " + g_userHandle + L"\n").c_str());
-				}
-			});
+				handle = L"@" + handle;
+			}
+			g_userHandle = handle;
+			SaveUserHandle(g_userHandle);
+			OutputDebugStringW((L"[Discrypt] User handle set to: " + g_userHandle + L"\n").c_str());
+		}
+
+		co_return;
 	}
 
 	/// <summary>
@@ -246,6 +264,10 @@ namespace winrt::Discrypt::implementation
 				return;
 			}
 
+			if (g_userHandle.empty())
+			{
+
+			}
 			std::wstring ourPublicKeyBase64 = ::Discrypt::CryptoManager::Base64Encode(g_session.publicKeyBlob);
 			modifiedText = L"HANDSHAKE_INIT:" + g_userHandle + L":" + ourPublicKeyBase64;
 
@@ -407,15 +429,7 @@ namespace winrt::Discrypt::implementation
 
 		// Load or prompt for user handle
 		g_userHandle = LoadUserHandle();
-		if (g_userHandle.empty())
-		{
-			// Prompt user for their @handle after window is activated
-			window.DispatcherQueue().TryEnqueue([this]()
-				{
-					PromptForUserHandle();
-				});
-		}
-		else
+		if (!g_userHandle.empty())
 		{
 			OutputDebugStringW((L"[Discrypt] Using stored handle: " + g_userHandle + L"\n").c_str());
 		}
