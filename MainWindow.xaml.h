@@ -19,6 +19,10 @@ namespace winrt::Discrypt::implementation
                                       winrt::Microsoft::UI::Xaml::RoutedEventArgs const& e);
         void RefreshButton_Click(winrt::Windows::Foundation::IInspectable const& sender,
                                   winrt::Microsoft::UI::Xaml::RoutedEventArgs const& e);
+        void StartMonitorButton_Click(winrt::Windows::Foundation::IInspectable const& sender,
+                                       winrt::Microsoft::UI::Xaml::RoutedEventArgs const& e);
+        void StopMonitorButton_Click(winrt::Windows::Foundation::IInspectable const& sender,
+                                      winrt::Microsoft::UI::Xaml::RoutedEventArgs const& e);
     };
 }
 

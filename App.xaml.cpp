@@ -4,6 +4,7 @@
 #include "CryptoManager.h"
 #include "DiscordInterop.h"
 #include "KeyboardHook.h"
+#include "MessageMonitor.h"
 
 #pragma comment(lib, "bcrypt.lib")
 
@@ -219,7 +220,7 @@ namespace winrt::Discrypt::implementation
 		auto appWindow = window.AppWindow();
 		if (appWindow)
 		{
-			appWindow.Resize({ 480, 600 });
+			appWindow.Resize({ 480, 700 });
 		}
 
 		window.Activate();
@@ -230,12 +231,64 @@ namespace winrt::Discrypt::implementation
 
 	App::~App()
 	{
+		// Stop message monitoring
+		StopMessageMonitoring();
+
 		// Uninstall keyboard hook
 		::Discrypt::KeyboardHook::Uninstall();
 
 		// Cleanup encryption session
 		::Discrypt::CryptoManager::CleanupSession(g_session);
 	}
-	
+
+	void App::StartMessageMonitoring()
+	{
+		if (m_messageMonitor)
+		{
+			OutputDebugStringW(L"[Discrypt] Message monitor already running\n");
+			return;
+		}
+
+		HWND discordWindow = ::Discrypt::DiscordInterop::GetDiscordWindow();
+		if (!discordWindow)
+		{
+			OutputDebugStringW(L"[Discrypt] Cannot start monitoring - Discord window not found\n");
+			return;
+		}
+
+		m_messageMonitor = new ::Discrypt::MessageMonitor();
+
+		// Callback for when encrypted messages are detected
+		auto callback = [](const std::wstring& encryptedText)
+		{
+			OutputDebugStringW(L"[Discrypt] *** CALLBACK: Encrypted message detected ***\n");
+			OutputDebugStringW((L"[Discrypt] Message: " + encryptedText.substr(0, 50) + L"...\n").c_str());
+
+			// TODO: Automatically decrypt and display
+			// For now, just log it
+		};
+
+		if (m_messageMonitor->StartMonitoring(discordWindow, callback))
+		{
+			OutputDebugStringW(L"[Discrypt] Message monitoring started successfully!\n");
+		}
+		else
+		{
+			OutputDebugStringW(L"[Discrypt] Failed to start message monitoring\n");
+			delete m_messageMonitor;
+			m_messageMonitor = nullptr;
+		}
+	}
+
+	void App::StopMessageMonitoring()
+	{
+		if (m_messageMonitor)
+		{
+			m_messageMonitor->StopMonitoring();
+			delete m_messageMonitor;
+			m_messageMonitor = nullptr;
+			OutputDebugStringW(L"[Discrypt] Message monitoring stopped\n");
+		}
+	}
 
 }

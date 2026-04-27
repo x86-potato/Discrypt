@@ -87,6 +87,18 @@
                 HorizontalAlignment="Center"
                 Click="RefreshButton_Click"/>
 
+            <!-- Message Monitoring Buttons -->
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Spacing="10">
+                <Button 
+                    x:Name="StartMonitorButton"
+                    Content="Start Monitoring"
+                    Click="StartMonitorButton_Click"/>
+                <Button 
+                    x:Name="StopMonitorButton"
+                    Content="Stop Monitoring"
+                    Click="StopMonitorButton_Click"/>
+            </StackPanel>
+
         </StackPanel>
     </Grid>
 </Window>

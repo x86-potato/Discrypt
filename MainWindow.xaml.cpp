@@ -4,6 +4,7 @@
 #include "MainWindow.g.cpp"
 #endif
 #include "CryptoManager.h"
+#include "App.xaml.h"
 
 using namespace winrt;
 using namespace Microsoft::UI::Xaml;
@@ -63,5 +64,23 @@ namespace winrt::Discrypt::implementation
         SharedSecretDisplay().Text(sharedSecret);
 
         OutputDebugStringW(L"[Discrypt] Keys refreshed in UI\n");
+    }
+
+    void MainWindow::StartMonitorButton_Click(IInspectable const& sender, RoutedEventArgs const& e)
+    {
+        OutputDebugStringW(L"[Discrypt] Start Monitoring button clicked\n");
+
+        // Get the App instance and start monitoring
+        auto app = Application::Current().as<winrt::Discrypt::implementation::App>();
+        app->StartMessageMonitoring();
+    }
+
+    void MainWindow::StopMonitorButton_Click(IInspectable const& sender, RoutedEventArgs const& e)
+    {
+        OutputDebugStringW(L"[Discrypt] Stop Monitoring button clicked\n");
+
+        // Get the App instance and stop monitoring
+        auto app = Application::Current().as<winrt::Discrypt::implementation::App>();
+        app->StopMessageMonitoring();
     }
 }

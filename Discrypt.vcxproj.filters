@@ -15,12 +15,14 @@
     <ClCompile Include="DiscordInterop.cpp" />
     <ClCompile Include="KeyboardHook.cpp" />
     <ClCompile Include="CryptoManager.cpp" />
+    <ClCompile Include="MessageMonitor.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="pch.h" />
     <ClInclude Include="DiscordInterop.h" />
     <ClInclude Include="KeyboardHook.h" />
     <ClInclude Include="CryptoManager.h" />
+    <ClInclude Include="MessageMonitor.h" />
   </ItemGroup>
   <ItemGroup>
     <Image Include="Assets\Wide310x150Logo.scale-200.png">
