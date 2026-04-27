@@ -37,6 +37,10 @@ namespace Discrypt
 		static std::wstring GetPublicKeyHex(const EncryptionSession& session);
 		static std::wstring GetSharedSecretHex(const EncryptionSession& session);
 
+		// Message encryption/decryption
+		static std::wstring EncryptMessage(const EncryptionSession& session, const std::wstring& plaintext);
+		static std::wstring DecryptMessage(const EncryptionSession& session, const std::wstring& ciphertext);
+
 		// Cleanup
 		static void CleanupSession(EncryptionSession& session);
 	};

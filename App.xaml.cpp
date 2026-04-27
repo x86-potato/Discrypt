@@ -125,14 +125,46 @@ namespace winrt::Discrypt::implementation
 			g_session.state = ::Discrypt::EncryptionSession::State::HandshakeInitiated;
 			OutputDebugStringW((L"[Discrypt] Public Key: " + ::Discrypt::CryptoManager::GetPublicKeyHex(g_session) + L"\n").c_str());
 		}
+		else if (originalText.find(L"[ENC]:") == 0)
+		{
+			// Encrypted message detected - decrypt it
+			OutputDebugStringW(L"[Discrypt] Encrypted message detected, decrypting...\n");
+
+			if (g_session.state != ::Discrypt::EncryptionSession::State::HandshakeComplete)
+			{
+				OutputDebugStringW(L"[Discrypt] Cannot decrypt - no handshake completed\n");
+				return;
+			}
+
+			std::wstring decrypted = ::Discrypt::CryptoManager::DecryptMessage(g_session, originalText);
+
+			// Replace encrypted text with decrypted text for display
+			::Discrypt::DiscordInterop::WriteTextBox(decrypted);
+			OutputDebugStringW((L"[Discrypt] Decrypted: " + decrypted + L"\n").c_str());
+
+			// Don't send anything - just show the decrypted message
+			return;
+		}
 		else if (g_session.state == ::Discrypt::EncryptionSession::State::HandshakeComplete)
 		{
-			// Handshake complete - in future this will encrypt the message
-			OutputDebugStringW(L"[Discrypt] Handshake already complete - ready for encryption\n");
+			// Handshake complete - encrypt the message
+			OutputDebugStringW(L"[Discrypt] Encrypting message...\n");
 			OutputDebugStringW((L"[Discrypt] Shared Secret: " + ::Discrypt::CryptoManager::GetSharedSecretHex(g_session) + L"\n").c_str());
 
-			// For now, just prefix with a marker
-			modifiedText = L"[ENCRYPTED] " + originalText;
+			if (originalText.empty())
+			{
+				OutputDebugStringW(L"[Discrypt] Empty message, nothing to encrypt\n");
+				return;
+			}
+
+			// Encrypt the message
+			modifiedText = ::Discrypt::CryptoManager::EncryptMessage(g_session, originalText);
+
+			if (modifiedText.empty())
+			{
+				OutputDebugStringW(L"[Discrypt] Encryption failed\n");
+				return;
+			}
 		}
 		else
 		{

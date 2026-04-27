@@ -244,6 +244,231 @@ namespace Discrypt
 		return ss.str();
 	}
 
+	std::wstring CryptoManager::EncryptMessage(const EncryptionSession& session, const std::wstring& plaintext)
+	{
+		OutputDebugStringW(L"[Discrypt] Encrypting message with AES-GCM...\n");
+
+		if (session.sharedSecretData.empty())
+		{
+			OutputDebugStringW(L"[Discrypt] No shared secret available for encryption\n");
+			return L"";
+		}
+
+		// Convert plaintext to UTF-8 bytes
+		int utf8Size = WideCharToMultiByte(CP_UTF8, 0, plaintext.c_str(), -1, nullptr, 0, nullptr, nullptr);
+		std::vector<BYTE> plaintextBytes(utf8Size - 1); // -1 to exclude null terminator
+		WideCharToMultiByte(CP_UTF8, 0, plaintext.c_str(), -1, (LPSTR)plaintextBytes.data(), utf8Size, nullptr, nullptr);
+
+		// Open AES algorithm provider
+		BCRYPT_ALG_HANDLE hAesAlg = nullptr;
+		NTSTATUS status = BCryptOpenAlgorithmProvider(&hAesAlg, BCRYPT_AES_ALGORITHM, nullptr, 0);
+		if (!BCRYPT_SUCCESS(status))
+		{
+			OutputDebugStringW(L"[Discrypt] Failed to open AES algorithm\n");
+			return L"";
+		}
+
+		// Set chaining mode to GCM
+		status = BCryptSetProperty(hAesAlg, BCRYPT_CHAINING_MODE, 
+			(PBYTE)BCRYPT_CHAIN_MODE_GCM, sizeof(BCRYPT_CHAIN_MODE_GCM), 0);
+		if (!BCRYPT_SUCCESS(status))
+		{
+			OutputDebugStringW(L"[Discrypt] Failed to set GCM mode\n");
+			BCryptCloseAlgorithmProvider(hAesAlg, 0);
+			return L"";
+		}
+
+		// Use first 32 bytes of shared secret as AES-256 key
+		std::vector<BYTE> aesKey(32);
+		size_t keySize = min(32, session.sharedSecretData.size());
+		memcpy(aesKey.data(), session.sharedSecretData.data(), keySize);
+		if (keySize < 32)
+		{
+			// Pad with zeros if shared secret is smaller
+			memset(aesKey.data() + keySize, 0, 32 - keySize);
+		}
+
+		// Import key
+		BCRYPT_KEY_HANDLE hKey = nullptr;
+		status = BCryptGenerateSymmetricKey(hAesAlg, &hKey, nullptr, 0, 
+			aesKey.data(), static_cast<ULONG>(aesKey.size()), 0);
+		if (!BCRYPT_SUCCESS(status))
+		{
+			OutputDebugStringW(L"[Discrypt] Failed to import AES key\n");
+			BCryptCloseAlgorithmProvider(hAesAlg, 0);
+			return L"";
+		}
+
+		// Generate random 12-byte IV (nonce) for GCM
+		std::vector<BYTE> iv(12);
+		BCryptGenRandom(nullptr, iv.data(), static_cast<ULONG>(iv.size()), BCRYPT_USE_SYSTEM_PREFERRED_RNG);
+
+		// Prepare GCM authentication info
+		BCRYPT_AUTHENTICATED_CIPHER_MODE_INFO authInfo;
+		BCRYPT_INIT_AUTH_MODE_INFO(authInfo);
+		authInfo.pbNonce = iv.data();
+		authInfo.cbNonce = static_cast<ULONG>(iv.size());
+
+		std::vector<BYTE> tag(16); // 16-byte authentication tag
+		authInfo.pbTag = tag.data();
+		authInfo.cbTag = static_cast<ULONG>(tag.size());
+		authInfo.pbAuthData = nullptr;
+		authInfo.cbAuthData = 0;
+
+		// Get ciphertext size
+		DWORD ciphertextSize = 0;
+		status = BCryptEncrypt(hKey, plaintextBytes.data(), static_cast<ULONG>(plaintextBytes.size()),
+			&authInfo, nullptr, 0, nullptr, 0, &ciphertextSize, 0);
+		if (!BCRYPT_SUCCESS(status))
+		{
+			OutputDebugStringW(L"[Discrypt] Failed to get ciphertext size\n");
+			BCryptDestroyKey(hKey);
+			BCryptCloseAlgorithmProvider(hAesAlg, 0);
+			return L"";
+		}
+
+		// Encrypt
+		std::vector<BYTE> ciphertext(ciphertextSize);
+		status = BCryptEncrypt(hKey, plaintextBytes.data(), static_cast<ULONG>(plaintextBytes.size()),
+			&authInfo, nullptr, 0, ciphertext.data(), ciphertextSize, &ciphertextSize, 0);
+
+		BCryptDestroyKey(hKey);
+		BCryptCloseAlgorithmProvider(hAesAlg, 0);
+
+		if (!BCRYPT_SUCCESS(status))
+		{
+			OutputDebugStringW(L"[Discrypt] Encryption failed\n");
+			return L"";
+		}
+
+		// Combine: IV (12 bytes) + Ciphertext + Tag (16 bytes)
+		std::vector<BYTE> combined;
+		combined.insert(combined.end(), iv.begin(), iv.end());
+		combined.insert(combined.end(), ciphertext.begin(), ciphertext.end());
+		combined.insert(combined.end(), tag.begin(), tag.end());
+
+		// Base64 encode and add prefix
+		std::wstring encoded = Base64Encode(combined);
+		OutputDebugStringW((L"[Discrypt] Message encrypted successfully (" + 
+			std::to_wstring(combined.size()) + L" bytes)\n").c_str());
+
+		return L"[ENC]:" + encoded;
+	}
+
+	std::wstring CryptoManager::DecryptMessage(const EncryptionSession& session, const std::wstring& ciphertext)
+	{
+		OutputDebugStringW(L"[Discrypt] Decrypting message with AES-GCM...\n");
+
+		if (session.sharedSecretData.empty())
+		{
+			OutputDebugStringW(L"[Discrypt] No shared secret available for decryption\n");
+			return L"[DECRYPT FAILED: No shared secret]";
+		}
+
+		// Remove [ENC]: prefix
+		std::wstring encoded = ciphertext;
+		if (encoded.find(L"[ENC]:") == 0)
+		{
+			encoded = encoded.substr(6);
+		}
+
+		// Base64 decode
+		std::vector<BYTE> combined = Base64Decode(encoded);
+		if (combined.size() < 28) // At least IV(12) + Tag(16) = 28 bytes
+		{
+			OutputDebugStringW(L"[Discrypt] Ciphertext too short\n");
+			return L"[DECRYPT FAILED: Invalid format]";
+		}
+
+		// Extract IV, ciphertext, and tag
+		std::vector<BYTE> iv(combined.begin(), combined.begin() + 12);
+		std::vector<BYTE> tag(combined.end() - 16, combined.end());
+		std::vector<BYTE> encryptedData(combined.begin() + 12, combined.end() - 16);
+
+		// Open AES algorithm provider
+		BCRYPT_ALG_HANDLE hAesAlg = nullptr;
+		NTSTATUS status = BCryptOpenAlgorithmProvider(&hAesAlg, BCRYPT_AES_ALGORITHM, nullptr, 0);
+		if (!BCRYPT_SUCCESS(status))
+		{
+			OutputDebugStringW(L"[Discrypt] Failed to open AES algorithm\n");
+			return L"[DECRYPT FAILED]";
+		}
+
+		// Set chaining mode to GCM
+		status = BCryptSetProperty(hAesAlg, BCRYPT_CHAINING_MODE,
+			(PBYTE)BCRYPT_CHAIN_MODE_GCM, sizeof(BCRYPT_CHAIN_MODE_GCM), 0);
+		if (!BCRYPT_SUCCESS(status))
+		{
+			OutputDebugStringW(L"[Discrypt] Failed to set GCM mode\n");
+			BCryptCloseAlgorithmProvider(hAesAlg, 0);
+			return L"[DECRYPT FAILED]";
+		}
+
+		// Use first 32 bytes of shared secret as AES-256 key
+		std::vector<BYTE> aesKey(32);
+		size_t keySize = min(32, session.sharedSecretData.size());
+		memcpy(aesKey.data(), session.sharedSecretData.data(), keySize);
+		if (keySize < 32)
+		{
+			memset(aesKey.data() + keySize, 0, 32 - keySize);
+		}
+
+		// Import key
+		BCRYPT_KEY_HANDLE hKey = nullptr;
+		status = BCryptGenerateSymmetricKey(hAesAlg, &hKey, nullptr, 0,
+			aesKey.data(), static_cast<ULONG>(aesKey.size()), 0);
+		if (!BCRYPT_SUCCESS(status))
+		{
+			OutputDebugStringW(L"[Discrypt] Failed to import AES key\n");
+			BCryptCloseAlgorithmProvider(hAesAlg, 0);
+			return L"[DECRYPT FAILED]";
+		}
+
+		// Prepare GCM authentication info
+		BCRYPT_AUTHENTICATED_CIPHER_MODE_INFO authInfo;
+		BCRYPT_INIT_AUTH_MODE_INFO(authInfo);
+		authInfo.pbNonce = iv.data();
+		authInfo.cbNonce = static_cast<ULONG>(iv.size());
+		authInfo.pbTag = tag.data();
+		authInfo.cbTag = static_cast<ULONG>(tag.size());
+		authInfo.pbAuthData = nullptr;
+		authInfo.cbAuthData = 0;
+
+		// Get plaintext size
+		DWORD plaintextSize = 0;
+		status = BCryptDecrypt(hKey, encryptedData.data(), static_cast<ULONG>(encryptedData.size()),
+			&authInfo, nullptr, 0, nullptr, 0, &plaintextSize, 0);
+		if (!BCRYPT_SUCCESS(status))
+		{
+			OutputDebugStringW(L"[Discrypt] Failed to get plaintext size\n");
+			BCryptDestroyKey(hKey);
+			BCryptCloseAlgorithmProvider(hAesAlg, 0);
+			return L"[DECRYPT FAILED]";
+		}
+
+		// Decrypt
+		std::vector<BYTE> plaintext(plaintextSize);
+		status = BCryptDecrypt(hKey, encryptedData.data(), static_cast<ULONG>(encryptedData.size()),
+			&authInfo, nullptr, 0, plaintext.data(), plaintextSize, &plaintextSize, 0);
+
+		BCryptDestroyKey(hKey);
+		BCryptCloseAlgorithmProvider(hAesAlg, 0);
+
+		if (!BCRYPT_SUCCESS(status))
+		{
+			OutputDebugStringW(L"[Discrypt] Decryption failed (authentication may have failed)\n");
+			return L"[DECRYPT FAILED: Invalid key or corrupted message]";
+		}
+
+		// Convert UTF-8 bytes back to wide string
+		int wideSize = MultiByteToWideChar(CP_UTF8, 0, (LPCSTR)plaintext.data(), plaintextSize, nullptr, 0);
+		std::wstring result(wideSize, L'\0');
+		MultiByteToWideChar(CP_UTF8, 0, (LPCSTR)plaintext.data(), plaintextSize, result.data(), wideSize);
+
+		OutputDebugStringW((L"[Discrypt] Message decrypted successfully: " + result + L"\n").c_str());
+		return result;
+	}
+
 	void CryptoManager::CleanupSession(EncryptionSession& session)
 	{
 		if (session.hPrivateKey)
