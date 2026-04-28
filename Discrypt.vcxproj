@@ -127,9 +127,7 @@
     <ClInclude Include="DiscordInterop.h" />
     <ClInclude Include="DiscordIPCModule.h" />
     <ClInclude Include="JSInjection.h" />
-    <ClInclude Include="KeyboardHook.h" />
     <ClInclude Include="pch.h" />
-    <ClInclude Include="sqlite3.h" />
     <ClInclude Include="App.xaml.h">
       <DependentUpon>App.xaml</DependentUpon>
     </ClInclude>
@@ -145,10 +143,6 @@
     <ClCompile Include="CryptoManager.cpp" />
     <ClCompile Include="DatabaseManager.cpp" />
     <ClCompile Include="DiscordInterop.cpp" />
-    <ClCompile Include="KeyboardHook.cpp" />
-    <ClCompile Include="sqlite3.c">
-      <PrecompiledHeader>NotUsing</PrecompiledHeader>
-    </ClCompile>
     <ClCompile Include="pch.cpp">
       <PrecompiledHeader>Create</PrecompiledHeader>
     </ClCompile>
@@ -193,14 +187,18 @@
     Explorer "Package and Publish" context menu entry to be enabled for this project even if
     the Windows App SDK Nuget package has not yet been restored.
   -->
-  <ItemGroup>
-    <None Include="CHANGES.md" />
-    <None Include="DH_KEY_EXCHANGE_GUIDE.md" />
-    <None Include="injection_payload.js" />
-    <None Include="packages.config" />
-    <None Include="REFACTORED_STRUCTURE.md" />
-    <None Include="SQLITE_INTEGRATION.md" />
-  </ItemGroup>
+	<ItemGroup>
+		<None Include="CHANGES.md" />
+		<None Include="DH_KEY_EXCHANGE_GUIDE.md" />
+		<Content Include="injection_payload.js">
+			<ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">false</ExcludedFromBuild>
+			<DeploymentContent Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</DeploymentContent>
+			<CopyToOutputDirectory>Always</CopyToOutputDirectory>
+		</Content>
+		<None Include="packages.config" />
+		<None Include="REFACTORED_STRUCTURE.md" />
+		<None Include="SQLITE_INTEGRATION.md" />
+	</ItemGroup>
   <PropertyGroup Condition="'$(DisableHasPackageAndPublishMenuAddedByProject)'!='true' and '$(EnableMsixTooling)'=='true'">
     <HasPackageAndPublishMenu>true</HasPackageAndPublishMenu>
   </PropertyGroup>

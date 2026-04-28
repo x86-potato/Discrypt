@@ -32,6 +32,8 @@ namespace Discrypt
 		// Key generation and exchange
 		static bool GenerateDHKeyPair(EncryptionSession& session);
 		static bool DeriveSharedSecret(EncryptionSession& session, const std::vector<BYTE>& partnerPublicKeyBlob);
+		static std::vector<BYTE> ExportPrivateKeyBlob(const EncryptionSession& session);
+		static bool ImportPrivateKey(EncryptionSession& session, const std::vector<BYTE>& privateKeyBlob);
 
 		// Display helpers
 		static std::wstring GetPublicKeyHex(const EncryptionSession& session);

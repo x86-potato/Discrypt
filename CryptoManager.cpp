@@ -214,6 +214,72 @@ namespace Discrypt
 		return true;
 	}
 
+	std::vector<BYTE> CryptoManager::ExportPrivateKeyBlob(const EncryptionSession& session)
+	{
+		if (!session.hPrivateKey)
+		{
+			OutputDebugStringW(L"[Discrypt] ExportPrivateKeyBlob: no private key handle\n");
+			return {};
+		}
+
+		DWORD blobSize = 0;
+		NTSTATUS status = BCryptExportKey(session.hPrivateKey, nullptr, BCRYPT_ECCPRIVATE_BLOB,
+			nullptr, 0, &blobSize, 0);
+		if (!BCRYPT_SUCCESS(status))
+		{
+			OutputDebugStringW(L"[Discrypt] ExportPrivateKeyBlob: failed to get blob size\n");
+			return {};
+		}
+
+		std::vector<BYTE> blob(blobSize);
+		status = BCryptExportKey(session.hPrivateKey, nullptr, BCRYPT_ECCPRIVATE_BLOB,
+			blob.data(), blobSize, &blobSize, 0);
+		if (!BCRYPT_SUCCESS(status))
+		{
+			OutputDebugStringW(L"[Discrypt] ExportPrivateKeyBlob: failed to export\n");
+			return {};
+		}
+
+		OutputDebugStringW((L"[Discrypt] Private key blob exported: " + std::to_wstring(blobSize) + L" bytes\n").c_str());
+		return blob;
+	}
+
+	bool CryptoManager::ImportPrivateKey(EncryptionSession& session, const std::vector<BYTE>& privateKeyBlob)
+	{
+		if (privateKeyBlob.empty())
+		{
+			OutputDebugStringW(L"[Discrypt] ImportPrivateKey: empty blob\n");
+			return false;
+		}
+
+		if (session.hPrivateKey) { BCryptDestroyKey(session.hPrivateKey); session.hPrivateKey = nullptr; }
+		if (session.hSharedSecret) { BCryptDestroySecret(session.hSharedSecret); session.hSharedSecret = nullptr; }
+		if (session.hAlgorithm) { BCryptCloseAlgorithmProvider(session.hAlgorithm, 0); session.hAlgorithm = nullptr; }
+
+		NTSTATUS status = BCryptOpenAlgorithmProvider(&session.hAlgorithm,
+			BCRYPT_ECDH_P256_ALGORITHM, nullptr, 0);
+		if (!BCRYPT_SUCCESS(status))
+		{
+			OutputDebugStringW(L"[Discrypt] ImportPrivateKey: failed to open algorithm provider\n");
+			return false;
+		}
+
+		status = BCryptImportKeyPair(session.hAlgorithm, nullptr, BCRYPT_ECCPRIVATE_BLOB,
+			&session.hPrivateKey,
+			const_cast<PUCHAR>(privateKeyBlob.data()),
+			static_cast<ULONG>(privateKeyBlob.size()), 0);
+		if (!BCRYPT_SUCCESS(status))
+		{
+			OutputDebugStringW(L"[Discrypt] ImportPrivateKey: failed to import key pair\n");
+			BCryptCloseAlgorithmProvider(session.hAlgorithm, 0);
+			session.hAlgorithm = nullptr;
+			return false;
+		}
+
+		OutputDebugStringW(L"[Discrypt] Private key imported successfully\n");
+		return true;
+	}
+
 	std::wstring CryptoManager::GetPublicKeyHex(const EncryptionSession& session)
 	{
 		if (session.publicKeyBlob.empty())

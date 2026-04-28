@@ -79,12 +79,12 @@ namespace winrt::Discrypt::implementation
 			auto result = sender.GetResults();
 			if (result == ContentDialogResult::Primary)
 			{
-				OutputDebugStringW(L"[Discrypt] Clearing all data...\n");
+				OutputDebugStringW(L"[Discrypt] Resetting database (dropping and recreating tables)...\n");
 
-				// Clear database
-				if (g_database.ClearAllData())
+				// Reset database - drop all tables and recreate them
+				if (g_database.ResetDatabase())
 				{
-					OutputDebugStringW(L"[Discrypt] Database cleared successfully\n");
+					OutputDebugStringW(L"[Discrypt] Database reset successfully\n");
 				}
 
 				// Show success notification
@@ -93,7 +93,7 @@ namespace winrt::Discrypt::implementation
 					ContentDialog successDialog;
 					successDialog.XamlRoot(this->Content().XamlRoot());
 					successDialog.Title(box_value(L"Success"));
-					successDialog.Content(box_value(L"All data has been cleared."));
+					successDialog.Content(box_value(L"All data has been cleared and database has been reset."));
 					successDialog.CloseButtonText(L"OK");
 					successDialog.ShowAsync();
 				});

@@ -1,4 +1,7 @@
 (() => {
+    const DISCRYPT_VERSION = '6';
+    console.log(`[Discrypt] 🔄 Injecting version ${DISCRYPT_VERSION}`);
+
     // ==========================================
     // 1. PREVENT DOUBLE-INJECTION GHOSTS
     // ==========================================
@@ -10,31 +13,53 @@
     const IPC_PORT = 9090;
     const ws = new WebSocket('ws://127.0.0.1:9090');
     const pendingRequests = new Map();
-    
+
     // Carry over the ID counter if we are re-injecting
-    let messageIdCounter = window.__discrypt_msgId || 0; 
-    
+    let messageIdCounter = window.__discrypt_msgId || 0;
+
     let currentMessageObserver = null;
     let titleObserver = null;
 
+    // ==========================================
+    // 2. WEBSOCKET HANDLERS
+    // ==========================================
+    ws.onerror = (err) => console.error('[Discrypt] ❌ WebSocket Error:', err);
+    ws.onclose = (event) => console.warn('[Discrypt] ⚠️ WebSocket Closed:', event.reason);
+
+    ws.onopen = () => {
+        console.log('[Discrypt] ✅ Connected to local C++ server.');
+        ws.send(JSON.stringify({ type: "DEBUG_PING", text: "JS is alive" }));
+    };
+
     ws.onmessage = (event) => {
-        const data = JSON.parse(event.data);
-        if (data.id && pendingRequests.has(data.id)) {
-            const targetNode = pendingRequests.get(data.id);
-            targetNode.innerText = data.text; 
-            pendingRequests.delete(data.id);
+        console.log('[Discrypt] 📥 RAW DATA RECEIVED:', event.data);
+        try {
+            const data = JSON.parse(event.data);
+
+            if (data.type === "SEND_DISCORD_MESSAGE") {
+                console.log('[Discrypt] 📋 Copying response to clipboard:', data.text);
+                // Zero DOM interaction — just write to clipboard.
+                // User presses Ctrl+V to paste and Enter to send.
+                navigator.clipboard.writeText(data.text).catch(err => {
+                    console.error('[Discrypt] ❌ Clipboard write failed:', err);
+                });
+            }
+            // ... (rest of your existing logic)
+        } catch (e) {
+            console.error('[Discrypt] ❌ Parse Error:', e);
         }
     };
 
-    ws.onopen = () => console.log('[Discrypt] Connected to local C++ server.');
-
+    // ==========================================
+    // 3. CHAT SWITCH EVENT
+    // ==========================================
     const sendChatSwitchEvent = () => {
         const rawTitle = document.title;
-        const handle = rawTitle.split(' - ')[0]; 
-        
-        const eventPayload = JSON.stringify({ 
-            type: "CHAT_SWITCH", 
-            handle: handle 
+        const handle = rawTitle.split(' - ')[0];
+
+        const eventPayload = JSON.stringify({
+            type: "CHAT_SWITCH",
+            handle: handle
         });
 
         if (ws.readyState === WebSocket.OPEN) {
@@ -44,28 +69,31 @@
         }
     };
 
+    // ==========================================
+    // 4. MESSAGE OBSERVER
+    // ==========================================
     function modifyNode(node) {
         if (node.nodeType !== 1) return;
-        
+
         const contents = node.querySelectorAll?.('[class*="messageContent"]');
-        const targetNodes = contents?.length ? Array.from(contents) : 
+        const targetNodes = contents?.length ? Array.from(contents) :
                             (node.className?.includes?.('messageContent') ? [node] : []);
 
         targetNodes.forEach(c => {
             const originalText = c.innerText;
-            
-            if (originalText.toLowerCase().startsWith('test') && !c.dataset.ipcProcessed) {
-                c.dataset.ipcProcessed = "true"; 
+
+            if ((originalText.includes('[HANDSHAKE') || originalText.startsWith('[ENC]:')) && !c.dataset.ipcProcessed) {
+                c.dataset.ipcProcessed = "true";
                 const id = ++messageIdCounter;
                 pendingRequests.set(id, c);
-                
-                c.innerText = "⏳ Awaiting C++..."; 
-                
+
+                c.innerText = "🔒 Processing secure payload...";
+
                 const sendPayload = () => {
-                    ws.send(JSON.stringify({ 
+                    ws.send(JSON.stringify({
                         type: "MESSAGE",
-                        id: id, 
-                        text: originalText 
+                        id: id,
+                        text: originalText
                     }));
                 };
 
@@ -81,12 +109,12 @@
     function hookCurrentChat() {
         if (currentMessageObserver) currentMessageObserver.disconnect();
 
-        const container = document.querySelector('[class*="messagesWrapper"]') || 
+        const container = document.querySelector('[class*="messagesWrapper"]') ||
                           document.querySelector('[class*="chatContent"]');
-        
+
         if (container) {
-            modifyNode(container); 
-            
+            modifyNode(container);
+
             currentMessageObserver = new MutationObserver(mutations => {
                 for (const mutation of mutations) {
                     for (const node of mutation.addedNodes) {
@@ -94,12 +122,11 @@
                     }
                 }
             });
-            
+
             currentMessageObserver.observe(container, { childList: true, subtree: true });
         }
     }
 
-    // Initialize hooks
     hookCurrentChat();
     sendChatSwitchEvent();
 
@@ -108,27 +135,61 @@
         titleObserver = new MutationObserver(() => {
             setTimeout(() => {
                 hookCurrentChat();
-                sendChatSwitchEvent(); 
-            }, 500); 
+                sendChatSwitchEvent();
+            }, 500);
         });
         titleObserver.observe(titleElement, { childList: true });
     }
 
     // ==========================================
-    // 2. EXPORT CLEANUP FUNCTION FOR NEXT TIME
+    // 5. COMMAND INTERCEPTION (Alt + Enter)
+    // ==========================================
+    const handleCommandInput = (e) => {
+        if (e.altKey && e.key === 'Enter') {
+            const chatBox = document.querySelector('[class*="slateTextArea"]');
+
+            if (chatBox && chatBox.contains(e.target)) {
+                const currentText = chatBox.innerText.trim();
+
+                if (currentText === '!handshake' || currentText === '!reply') {
+                    e.preventDefault();
+                    e.stopPropagation();
+
+                    console.log(`[Discrypt] v${DISCRYPT_VERSION} ✅ Alt+Enter intercepted — command: "${currentText}" @ ${new Date().toISOString()}`);
+
+                    const eventType = (currentText === '!handshake') ? "INIT_HANDSHAKE" : "ACCEPT_HANDSHAKE";
+
+                    if (ws.readyState === WebSocket.OPEN) {
+                        ws.send(JSON.stringify({ type: eventType }));
+                    } else {
+                        console.warn('[Discrypt] WebSocket not ready. Command dropped.');
+                    }
+
+                    // Select all text in the box — selectAll only moves the cursor,
+                    // it never writes to any text node so Slate's model stays intact.
+                    // When the user presses Ctrl+V, Discord's own paste handler will
+                    // replace the selection with the clipboard content cleanly.
+                    chatBox.focus();
+                    document.execCommand('selectAll', false, null);
+                }
+            }
+        }
+    };
+
+    document.addEventListener('keydown', handleCommandInput, true);
+
+    // ==========================================
+    // 6. CLEANUP
     // ==========================================
     window.__discrypt_cleanup = () => {
-        // Close the dead socket
         if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
-            ws.close(); 
+            ws.close();
         }
-        // Kill the observers
         if (currentMessageObserver) currentMessageObserver.disconnect();
         if (titleObserver) titleObserver.disconnect();
-        
-        // Save state
+        document.removeEventListener('keydown', handleCommandInput, true);
         window.__discrypt_msgId = messageIdCounter;
     };
 
-    return "Success: Cleaned old hooks, installed fresh IPC payload.";
+    return "Success: IPC payload injected with Slate.js command interception.";
 })();

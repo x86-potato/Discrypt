@@ -7,8 +7,6 @@
 #include <future>
 #include <memory>
 #include <iostream>
-#include <fstream>
-#include <sstream>
 #include <windows.h>
 
 using json = nlohmann::json;
@@ -138,28 +136,288 @@ namespace Discrypt {
 
     private:
         static std::string GetJavascriptPayload() {
-            wchar_t exePath[MAX_PATH];
-            GetModuleFileNameW(NULL, exePath, MAX_PATH);
+            // JS payload embedded directly — no file I/O, always in sync with the build.
+            return R"JS(
+(() => {
+    const DISCRYPT_VERSION = '11';
+    console.log(`[Discrypt] 🔄 Injecting version ${DISCRYPT_VERSION}`);
 
-            std::wstring exeDir(exePath);
-            size_t lastSlash = exeDir.find_last_of(L"\\/");
-            if (lastSlash != std::wstring::npos) {
-                exeDir = exeDir.substr(0, lastSlash);
+    // ==========================================
+    // 1. PREVENT DOUBLE-INJECTION GHOSTS
+    // ==========================================
+    if (window.__discrypt_cleanup) {
+        console.log('[Discrypt] Destroying previous ghost hooks...');
+        window.__discrypt_cleanup();
+    }
+
+    const IPC_PORT = 9090;
+    const ws = new WebSocket('ws://127.0.0.1:9090');
+    const pendingRequests = new Map();
+
+    // Carry over the ID counter if we are re-injecting
+    let messageIdCounter = window.__discrypt_msgId || 0;
+
+    let currentMessageObserver = null;
+    let titleObserver = null;
+
+    // ==========================================
+    // 2. WEBSOCKET HANDLERS
+    // ==========================================
+    ws.onerror = (err) => console.error('[Discrypt] ❌ WebSocket Error:', err);
+    ws.onclose = (event) => console.warn('[Discrypt] ⚠️ WebSocket Closed:', event.reason);
+
+    ws.onopen = () => {
+        console.log('[Discrypt] ✅ Connected to local C++ server.');
+        ws.send(JSON.stringify({ type: "DEBUG_PING", text: "JS is alive" }));
+    };
+
+    ws.onmessage = (event) => {
+        console.log('[Discrypt] 📥 RAW DATA RECEIVED:', event.data);
+        try {
+            const data = JSON.parse(event.data);
+
+            if (data.type === "SEND_DISCORD_MESSAGE") {
+                console.log('[Discrypt] 📋 Pasting response via ClipboardEvent:', data.text);
+                const chatBox = document.querySelector('[class*="slateTextArea"]');
+                if (!chatBox) {
+                    console.warn('[Discrypt] ⚠️ chatBox not found.');
+                    return;
+                }
+
+                chatBox.focus();
+                // Re-select-all so Slate has a valid selection to replace on paste
+                document.execCommand('selectAll', false, null);
+
+                setTimeout(() => {
+                    const dt = new DataTransfer();
+                    dt.setData('text/plain', data.text);
+                    chatBox.dispatchEvent(new ClipboardEvent('paste', {
+                        clipboardData: dt,
+                        bubbles: true,
+                        cancelable: true
+                    }));
+
+                    // Enter to send
+                    setTimeout(() => {
+                        chatBox.dispatchEvent(new KeyboardEvent('keydown', {
+                            key: 'Enter', code: 'Enter', keyCode: 13, which: 13,
+                            bubbles: true, cancelable: true
+                        }));
+
+                        // If this was a HANDSHAKE_ACK, also notify C++ so it can
+                        // process it on the acceptor side (mirror of !accept scanning for INIT)
+                        if (data.text.startsWith('[HANDSHAKE_ACK]:')) {
+                            setTimeout(() => {
+                                if (ws.readyState === WebSocket.OPEN) {
+                                    ws.send(JSON.stringify({
+                                        type: 'MESSAGE',
+                                        id: ++messageIdCounter,
+                                        text: data.text,
+                                        partnerHandle: document.title.split(' - ')[0].trim()
+                                    }));
+                                    console.log('[Discrypt] ACK echoed back to C++ for acceptor-side confirmation');
+                                }
+                            }, 200);
+                        }
+                    }, 150);
+                }, 50);
             }
+        } catch (e) {
+            console.error('[Discrypt] ❌ Parse Error:', e);
+        }
+    };
 
-            std::wstring jsFilePath = exeDir + L"\\injection_payload.js";
+    // ==========================================
+    // 3. CHAT SWITCH EVENT
+    // ==========================================
+    const sendChatSwitchEvent = () => {
+        const rawTitle = document.title;
+        const handle = rawTitle.split(' - ')[0];
 
-            std::ifstream jsFile(jsFilePath);
-            if (!jsFile.is_open()) {
-                OutputDebugStringW(L"[Injector] FAIL: Could not open injection_payload.js\n");
-                OutputDebugStringW((L"[Injector] Searched at: " + jsFilePath + L"\n").c_str());
-                return "";
+        const eventPayload = JSON.stringify({
+            type: "CHAT_SWITCH",
+            handle: handle
+        });
+
+        if (ws.readyState === WebSocket.OPEN) {
+            ws.send(eventPayload);
+        } else {
+            ws.addEventListener('open', () => ws.send(eventPayload), { once: true });
+        }
+    };
+
+    // ==========================================
+    // 4. MESSAGE OBSERVER
+    // ==========================================
+    function modifyNode(node) {
+        if (node.nodeType !== 1) return;
+
+        const contents = node.querySelectorAll?.('[class*="messageContent"]');
+        const targetNodes = contents?.length ? Array.from(contents) :
+                            (node.className?.includes?.('messageContent') ? [node] : []);
+
+        targetNodes.forEach(c => {
+            const originalText = c.innerText;
+
+            if ((originalText.startsWith('[HANDSHAKE_ACK]:') || originalText.startsWith('[ENC]:')) && !c.dataset.ipcProcessed) {
+                c.dataset.ipcProcessed = "true";
+                const id = ++messageIdCounter;
+                pendingRequests.set(id, c);
+
+                c.innerText = "🔒 Processing secure payload...";
+
+                const sendPayload = () => {
+                    ws.send(JSON.stringify({
+                        type: "MESSAGE",
+                        id: id,
+                        text: originalText,
+                        partnerHandle: document.title.split(' - ')[0].trim()
+                    }));
+                };
+
+                if (ws.readyState === WebSocket.OPEN) {
+                    sendPayload();
+                } else {
+                    ws.addEventListener('open', sendPayload, { once: true });
+                }
             }
+        });
+    }
 
-            std::stringstream buffer;
-            buffer << jsFile.rdbuf();
-            return buffer.str();
-        }    
+    function hookCurrentChat() {
+        if (currentMessageObserver) currentMessageObserver.disconnect();
+
+        const container = document.querySelector('[class*="messagesWrapper"]') ||
+                          document.querySelector('[class*="chatContent"]');
+
+        if (container) {
+            modifyNode(container);
+
+            currentMessageObserver = new MutationObserver(mutations => {
+                for (const mutation of mutations) {
+                    for (const node of mutation.addedNodes) {
+                        modifyNode(node);
+                    }
+                }
+            });
+
+            currentMessageObserver.observe(container, { childList: true, subtree: true });
+        }
+    }
+
+    hookCurrentChat();
+    sendChatSwitchEvent();
+
+    const titleElement = document.querySelector('title');
+    if (titleElement) {
+        titleObserver = new MutationObserver(() => {
+            setTimeout(() => {
+                hookCurrentChat();
+                sendChatSwitchEvent();
+            }, 500);
+        });
+        titleObserver.observe(titleElement, { childList: true });
+    }
+
+    // ==========================================
+    // 5. COMMAND INTERCEPTION (Alt + Enter)
+    // ==========================================
+    const handleCommandInput = (e) => {
+        if (e.altKey && e.key === 'Enter') {
+            const chatBox = document.querySelector('[class*="slateTextArea"]');
+
+            if (chatBox && chatBox.contains(e.target)) {
+                const currentText = chatBox.innerText.trim();
+
+                if (currentText === '!handshake' || currentText === '!accept') {
+                    e.preventDefault();
+                    e.stopPropagation();
+
+                    console.log(`[Discrypt] v${DISCRYPT_VERSION} ✅ Alt+Enter intercepted — command: "${currentText}" @ ${new Date().toISOString()}`);
+
+                    const partnerHandle = document.title.split(' - ')[0].trim();
+
+                    if (currentText === '!handshake') {
+                        if (ws.readyState === WebSocket.OPEN) {
+                            ws.send(JSON.stringify({ type: 'INIT_HANDSHAKE', partnerHandle: partnerHandle }));
+                        } else {
+                            console.warn('[Discrypt] WebSocket not ready. Command dropped.');
+                        }
+                    } else if (currentText === '!accept') {
+                        // Scan all visible message nodes for the earliest [HANDSHAKE_INIT]: message
+                        const allMessageNodes = document.querySelectorAll('[class*="messageContent"]');
+                        let initNode = null;
+                        for (let i = allMessageNodes.length - 1; i >= 0; i--) {
+                            if (allMessageNodes[i].innerText.includes('[HANDSHAKE_INIT]:')) {
+                                initNode = allMessageNodes[i];
+                                break; // most recent = last in DOM order
+                            }
+                        }
+
+                        if (!initNode) {
+                            console.warn('[Discrypt] !accept — no [HANDSHAKE_INIT]: message found in chat.');
+                        } else {
+                            const rawText = initNode.innerText.trim();
+                            const prefix = '[HANDSHAKE_INIT]:';
+                            const partnerPublicKey = rawText.substring(rawText.indexOf(prefix) + prefix.length).trim();
+                            console.log('[Discrypt] !accept — found partner public key:', partnerPublicKey);
+
+                            if (ws.readyState === WebSocket.OPEN) {
+                                ws.send(JSON.stringify({
+                                    type: 'ACCEPT_HANDSHAKE',
+                                    partnerHandle: partnerHandle,
+                                    partnerPublicKey: partnerPublicKey
+                                }));
+                            } else {
+                                console.warn('[Discrypt] WebSocket not ready. Command dropped.');
+                            }
+                        }
+                    }
+
+                    chatBox.focus();
+                    document.execCommand('selectAll', false, null);
+
+                } else if (currentText.length > 0) {
+                    // Regular message — route through C++ before sending.
+                    // C++ will echo it back as SEND_DISCORD_MESSAGE (encrypted in future).
+                    e.preventDefault();
+                    e.stopPropagation();
+
+                    console.log(`[Discrypt] v${DISCRYPT_VERSION} ✉️ Routing outgoing message through C++: "${currentText}" @ ${new Date().toISOString()}`);
+
+                    if (ws.readyState === WebSocket.OPEN) {
+                        ws.send(JSON.stringify({ type: "OUTGOING_MESSAGE", text: currentText }));
+                    } else {
+                        console.warn('[Discrypt] WebSocket not ready. Message dropped.');
+                    }
+
+                    // Select all so the paste from C++ response replaces the typed text
+                    chatBox.focus();
+                    document.execCommand('selectAll', false, null);
+                }
+            }
+        }
+    };
+
+    document.addEventListener('keydown', handleCommandInput, true);
+
+    // ==========================================
+    // 6. CLEANUP
+    // ==========================================
+    window.__discrypt_cleanup = () => {
+        if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
+            ws.close();
+        }
+        if (currentMessageObserver) currentMessageObserver.disconnect();
+        if (titleObserver) titleObserver.disconnect();
+        document.removeEventListener('keydown', handleCommandInput, true);
+        window.__discrypt_msgId = messageIdCounter;
+    };
+
+    return "Success: IPC payload injected with Slate.js command interception.";
+})();
+)JS";
+        }
     };
 
 } // namespace Discrypt

@@ -1,9 +1,6 @@
 #include "pch.h"
 #include "DatabaseManager.h"
 #include "sqlite3.h"
-#include <fstream>
-#include <filesystem>
-#include <sstream>
 
 namespace Discrypt
 {
@@ -20,57 +17,79 @@ namespace Discrypt
         }
     }
 
+    // -------------------------------------------------------------------------
+    // Lifecycle
+    // -------------------------------------------------------------------------
+
     bool DatabaseManager::Initialize(const std::wstring& dbPath)
     {
         m_dbPath = dbPath;
         std::string utf8Path = WideToUTF8(dbPath);
 
-        OutputDebugStringW(L"[DatabaseManager] Attempting to open database at: ");
+        OutputDebugStringW(L"[DatabaseManager] Opening database at: ");
         OutputDebugStringW(dbPath.c_str());
         OutputDebugStringW(L"\n");
 
         int rc = sqlite3_open(utf8Path.c_str(), &m_db);
         if (rc != SQLITE_OK)
         {
-            std::string errorMsg = sqlite3_errmsg(m_db);
-            OutputDebugStringA("[DatabaseManager] SQLite open failed: ");
-            OutputDebugStringA(errorMsg.c_str());
+            OutputDebugStringA("[DatabaseManager] sqlite3_open failed: ");
+            OutputDebugStringA(sqlite3_errmsg(m_db));
             OutputDebugStringA("\n");
-            OutputDebugStringW(L"[DatabaseManager] SQLite error code: ");
-            OutputDebugStringW(std::to_wstring(rc).c_str());
-            OutputDebugStringW(L"\n");
             return false;
         }
 
-        OutputDebugStringW(L"[DatabaseManager] SQLite database opened successfully\n");
+        OutputDebugStringW(L"[DatabaseManager] Database opened successfully\n");
 
-        bool tablesCreated = CreateTables();
-        if (!tablesCreated)
+        if (!CreateTables())
         {
             OutputDebugStringW(L"[DatabaseManager] Failed to create tables\n");
-        }
-        else
-        {
-            OutputDebugStringW(L"[DatabaseManager] Tables created successfully\n");
+            return false;
         }
 
-        return tablesCreated;
+        OutputDebugStringW(L"[DatabaseManager] Tables ready\n");
+        return true;
     }
+
+    bool DatabaseManager::ResetDatabase()
+    {
+        OutputDebugStringW(L"[DatabaseManager] Resetting database\n");
+
+        bool ok = true;
+        ok &= ExecuteSQL("DROP TABLE IF EXISTS sessions;");
+        ok &= ExecuteSQL("DROP TABLE IF EXISTS settings;");
+
+        if (!ok)
+        {
+            OutputDebugStringW(L"[DatabaseManager] Failed to drop tables\n");
+            return false;
+        }
+
+        if (!CreateTables())
+        {
+            OutputDebugStringW(L"[DatabaseManager] Failed to recreate tables\n");
+            return false;
+        }
+
+        OutputDebugStringW(L"[DatabaseManager] Database reset successfully\n");
+        return true;
+    }
+
+    // -------------------------------------------------------------------------
+    // Private helpers
+    // -------------------------------------------------------------------------
 
     bool DatabaseManager::CreateTables()
     {
         const char* sql =
-            // 1. SESSIONS TABLE: The core state machine for the handshake
             "CREATE TABLE IF NOT EXISTS sessions ("
             "    partner_handle TEXT PRIMARY KEY,"
-            "    state TEXT NOT NULL,"           // 'PENDING_INITIATOR', 'PENDING_RECEIVER', 'SECURED'
-            "    my_private_key BLOB,"           // Generated when handshake starts
-            "    my_public_key BLOB,"            // Sent to partner
-            "    shared_secret BLOB,"            // The final AES key (Null until SECURED)
+            "    state TEXT NOT NULL,"
+            "    my_private_key BLOB,"
+            "    my_public_key BLOB,"
+            "    shared_secret BLOB,"
             "    last_updated DATETIME DEFAULT CURRENT_TIMESTAMP"
             ");"
-
-            // 2. SETTINGS TABLE: App configuration (Your handle, auto-inject, etc.)
             "CREATE TABLE IF NOT EXISTS settings ("
             "    key TEXT PRIMARY KEY,"
             "    value TEXT"
@@ -83,323 +102,248 @@ namespace Discrypt
     {
         char* errMsg = nullptr;
         int rc = sqlite3_exec(m_db, sql.c_str(), nullptr, nullptr, &errMsg);
-
         if (rc != SQLITE_OK)
         {
-            OutputDebugStringA("[DatabaseManager] SQL execution failed: ");
+            OutputDebugStringA("[DatabaseManager] SQL error: ");
             if (errMsg)
             {
                 OutputDebugStringA(errMsg);
-                OutputDebugStringA("\n");
                 sqlite3_free(errMsg);
             }
-            else
-            {
-                OutputDebugStringA("(no error message)\n");
-            }
-            OutputDebugStringW(L"[DatabaseManager] SQLite error code: ");
-            OutputDebugStringW(std::to_wstring(rc).c_str());
-            OutputDebugStringW(L"\n");
+            OutputDebugStringA("\n");
             return false;
         }
-
         return true;
-    }
-
-    bool DatabaseManager::SaveUserHandle(const std::wstring& handle)
-    {
-        std::string sql = "INSERT OR REPLACE INTO settings (key, value) VALUES ('user_handle', ?);";
-        
-        sqlite3_stmt* stmt;
-        int rc = sqlite3_prepare_v2(m_db, sql.c_str(), -1, &stmt, nullptr);
-        if (rc != SQLITE_OK)
-        {
-            return false;
-        }
-
-        std::string utf8Handle = WideToUTF8(handle);
-        sqlite3_bind_text(stmt, 1, utf8Handle.c_str(), -1, SQLITE_TRANSIENT);
-
-        rc = sqlite3_step(stmt);
-        sqlite3_finalize(stmt);
-
-        return rc == SQLITE_DONE;
-    }
-
-    std::wstring DatabaseManager::LoadUserHandle()
-    {
-        std::string sql = "SELECT value FROM settings WHERE key = 'user_handle';";
-        
-        sqlite3_stmt* stmt;
-        int rc = sqlite3_prepare_v2(m_db, sql.c_str(), -1, &stmt, nullptr);
-        if (rc != SQLITE_OK)
-        {
-            return L"";
-        }
-
-        std::wstring result;
-        if (sqlite3_step(stmt) == SQLITE_ROW)
-        {
-            const char* value = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
-            if (value)
-            {
-                result = UTF8ToWide(value);
-            }
-        }
-
-        sqlite3_finalize(stmt);
-        return result;
-    }
-
-    bool DatabaseManager::SaveMessage(const std::wstring& partnerHandle, const std::wstring& content, bool isSent)
-    {
-        std::string sql = "INSERT INTO messages (partner_handle, sender_handle, content, is_sent) VALUES (?, '', ?, ?);";
-        
-        sqlite3_stmt* stmt;
-        int rc = sqlite3_prepare_v2(m_db, sql.c_str(), -1, &stmt, nullptr);
-        if (rc != SQLITE_OK)
-        {
-            return false;
-        }
-
-        std::string utf8Partner = WideToUTF8(partnerHandle);
-        std::string utf8Content = WideToUTF8(content);
-
-        sqlite3_bind_text(stmt, 1, utf8Partner.c_str(), -1, SQLITE_TRANSIENT);
-        sqlite3_bind_text(stmt, 2, utf8Content.c_str(), -1, SQLITE_TRANSIENT);
-        sqlite3_bind_int(stmt, 3, isSent ? 1 : 0);
-
-        rc = sqlite3_step(stmt);
-        sqlite3_finalize(stmt);
-
-        return rc == SQLITE_DONE;
-    }
-
-    std::vector<MessageRecord> DatabaseManager::LoadMessages(const std::wstring& partnerHandle)
-    {
-        std::vector<MessageRecord> messages;
-        std::string sql = "SELECT message_id, sender_handle, content, timestamp, is_sent FROM messages WHERE partner_handle = ? ORDER BY timestamp ASC;";
-        
-        sqlite3_stmt* stmt;
-        int rc = sqlite3_prepare_v2(m_db, sql.c_str(), -1, &stmt, nullptr);
-        if (rc != SQLITE_OK)
-        {
-            return messages;
-        }
-
-        std::string utf8Partner = WideToUTF8(partnerHandle);
-        sqlite3_bind_text(stmt, 1, utf8Partner.c_str(), -1, SQLITE_TRANSIENT);
-
-        while (sqlite3_step(stmt) == SQLITE_ROW)
-        {
-            MessageRecord msg;
-            msg.messageId = sqlite3_column_int(stmt, 0);
-            
-            const char* sender = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
-            msg.senderHandle = sender ? UTF8ToWide(sender) : L"";
-            
-            const char* content = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 2));
-            msg.content = content ? UTF8ToWide(content) : L"";
-            
-            const char* timestamp = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 3));
-            msg.timestamp = timestamp ? UTF8ToWide(timestamp) : L"";
-            
-            msg.isSent = sqlite3_column_int(stmt, 4) != 0;
-
-            messages.push_back(msg);
-        }
-
-        sqlite3_finalize(stmt);
-        return messages;
-    }
-
-    bool DatabaseManager::ClearAllMessages()
-    {
-        return ExecuteSQL("DELETE FROM messages;");
-    }
-
-    bool DatabaseManager::ClearAllData()
-    {
-        // Clear all tables
-        bool success = true;
-        success &= ExecuteSQL("DELETE FROM messages;");
-        success &= ExecuteSQL("DELETE FROM users;");
-        success &= ExecuteSQL("DELETE FROM user_settings;");
-
-        if (success)
-        {
-            OutputDebugStringW(L"[DatabaseManager] All data cleared successfully\n");
-        }
-        else
-        {
-            OutputDebugStringW(L"[DatabaseManager] Failed to clear all data\n");
-        }
-
-        return success;
-    }
-
-    std::vector<ConversationRecord> DatabaseManager::GetAllConversations()
-    {
-        std::vector<ConversationRecord> conversations;
-        std::string sql = 
-            "SELECT partner_handle, "
-            "       (SELECT content FROM messages m2 WHERE m2.partner_handle = m.partner_handle ORDER BY timestamp DESC LIMIT 1) as last_message, "
-            "       (SELECT timestamp FROM messages m2 WHERE m2.partner_handle = m.partner_handle ORDER BY timestamp DESC LIMIT 1) as last_timestamp, "
-            "       0 as unread_count "
-            "FROM messages m "
-            "GROUP BY partner_handle "
-            "ORDER BY last_timestamp DESC;";
-        
-        sqlite3_stmt* stmt;
-        int rc = sqlite3_prepare_v2(m_db, sql.c_str(), -1, &stmt, nullptr);
-        if (rc != SQLITE_OK)
-        {
-            return conversations;
-        }
-
-        while (sqlite3_step(stmt) == SQLITE_ROW)
-        {
-            ConversationRecord conv;
-            
-            const char* partner = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
-            conv.partnerHandle = partner ? UTF8ToWide(partner) : L"";
-            
-            const char* lastMsg = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
-            conv.lastMessage = lastMsg ? UTF8ToWide(lastMsg) : L"";
-            
-            const char* lastTime = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 2));
-            conv.lastTimestamp = lastTime ? UTF8ToWide(lastTime) : L"";
-            
-            conv.unreadCount = sqlite3_column_int(stmt, 3);
-
-            conversations.push_back(conv);
-        }
-
-        sqlite3_finalize(stmt);
-        return conversations;
-    }
-
-    bool DatabaseManager::DeleteConversation(const std::wstring& partnerHandle)
-    {
-        std::string sql = "DELETE FROM messages WHERE partner_handle = ?;";
-        
-        sqlite3_stmt* stmt;
-        int rc = sqlite3_prepare_v2(m_db, sql.c_str(), -1, &stmt, nullptr);
-        if (rc != SQLITE_OK)
-        {
-            return false;
-        }
-
-        std::string utf8Partner = WideToUTF8(partnerHandle);
-        sqlite3_bind_text(stmt, 1, utf8Partner.c_str(), -1, SQLITE_TRANSIENT);
-
-        rc = sqlite3_step(stmt);
-        sqlite3_finalize(stmt);
-
-        return rc == SQLITE_DONE;
-    }
-
-    bool DatabaseManager::MigrateFromFiles()
-    {
-        WCHAR tempPath[MAX_PATH];
-        if (SHGetFolderPathW(NULL, CSIDL_LOCAL_APPDATA, NULL, 0, tempPath) != S_OK)
-        {
-            return false;
-        }
-
-        std::wstring basePath = std::wstring(tempPath) + L"\\Discrypt";
-        
-        if (!std::filesystem::exists(basePath))
-        {
-            return true; // No files to migrate
-        }
-
-        // Check for user_handle.txt
-        std::wstring handleFile = basePath + L"\\user_handle.txt";
-        if (std::filesystem::exists(handleFile))
-        {
-            std::wifstream file(handleFile);
-            if (file.is_open())
-            {
-                std::wstring handle;
-                std::getline(file, handle);
-                file.close();
-                
-                if (!handle.empty())
-                {
-                    SaveUserHandle(handle);
-                }
-            }
-        }
-
-        return true;
-    }
-
-    int DatabaseManager::GetOrCreateUserId(const std::wstring& handle)
-    {
-        std::string utf8Handle = WideToUTF8(handle);
-        
-        // Try to find existing user
-        std::string selectSql = "SELECT user_id FROM users WHERE handle = ?;";
-        sqlite3_stmt* stmt;
-        int rc = sqlite3_prepare_v2(m_db, selectSql.c_str(), -1, &stmt, nullptr);
-        if (rc == SQLITE_OK)
-        {
-            sqlite3_bind_text(stmt, 1, utf8Handle.c_str(), -1, SQLITE_TRANSIENT);
-            if (sqlite3_step(stmt) == SQLITE_ROW)
-            {
-                int userId = sqlite3_column_int(stmt, 0);
-                sqlite3_finalize(stmt);
-                return userId;
-            }
-            sqlite3_finalize(stmt);
-        }
-
-        // Create new user
-        std::string insertSql = "INSERT INTO users (handle) VALUES (?);";
-        rc = sqlite3_prepare_v2(m_db, insertSql.c_str(), -1, &stmt, nullptr);
-        if (rc != SQLITE_OK)
-        {
-            return -1;
-        }
-
-        sqlite3_bind_text(stmt, 1, utf8Handle.c_str(), -1, SQLITE_TRANSIENT);
-        rc = sqlite3_step(stmt);
-        sqlite3_finalize(stmt);
-
-        if (rc == SQLITE_DONE)
-        {
-            return static_cast<int>(sqlite3_last_insert_rowid(m_db));
-        }
-
-        return -1;
     }
 
     std::string DatabaseManager::WideToUTF8(const std::wstring& wstr)
     {
-        if (wstr.empty())
-        {
-            return std::string();
-        }
-
+        if (wstr.empty()) return {};
         int size = WideCharToMultiByte(CP_UTF8, 0, wstr.c_str(), static_cast<int>(wstr.length()), nullptr, 0, nullptr, nullptr);
         std::string result(size, 0);
         WideCharToMultiByte(CP_UTF8, 0, wstr.c_str(), static_cast<int>(wstr.length()), &result[0], size, nullptr, nullptr);
-
         return result;
     }
 
     std::wstring DatabaseManager::UTF8ToWide(const std::string& str)
     {
-        if (str.empty())
-        {
-            return std::wstring();
-        }
-
+        if (str.empty()) return {};
         int size = MultiByteToWideChar(CP_UTF8, 0, str.c_str(), static_cast<int>(str.length()), nullptr, 0);
         std::wstring result(size, 0);
         MultiByteToWideChar(CP_UTF8, 0, str.c_str(), static_cast<int>(str.length()), &result[0], size);
-
         return result;
+    }
+
+    // -------------------------------------------------------------------------
+    // Settings
+    // -------------------------------------------------------------------------
+
+    bool DatabaseManager::SaveSetting(const std::wstring& key, const std::wstring& value)
+    {
+        const char* sql = "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?);";
+        sqlite3_stmt* stmt;
+        if (sqlite3_prepare_v2(m_db, sql, -1, &stmt, nullptr) != SQLITE_OK) return false;
+
+        std::string k = WideToUTF8(key);
+        std::string v = WideToUTF8(value);
+        sqlite3_bind_text(stmt, 1, k.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(stmt, 2, v.c_str(), -1, SQLITE_TRANSIENT);
+
+        int rc = sqlite3_step(stmt);
+        sqlite3_finalize(stmt);
+        return rc == SQLITE_DONE;
+    }
+
+    std::wstring DatabaseManager::LoadSetting(const std::wstring& key)
+    {
+        const char* sql = "SELECT value FROM settings WHERE key = ?;";
+        sqlite3_stmt* stmt;
+        if (sqlite3_prepare_v2(m_db, sql, -1, &stmt, nullptr) != SQLITE_OK) return L"";
+
+        std::string k = WideToUTF8(key);
+        sqlite3_bind_text(stmt, 1, k.c_str(), -1, SQLITE_TRANSIENT);
+
+        std::wstring result;
+        if (sqlite3_step(stmt) == SQLITE_ROW)
+        {
+            const char* v = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
+            if (v) result = UTF8ToWide(v);
+        }
+
+        sqlite3_finalize(stmt);
+        return result;
+    }
+
+    bool DatabaseManager::SaveUserHandle(const std::wstring& handle)
+    {
+        return SaveSetting(L"user_handle", handle);
+    }
+
+    std::wstring DatabaseManager::LoadUserHandle()
+    {
+        return LoadSetting(L"user_handle");
+    }
+
+    // -------------------------------------------------------------------------
+    // Sessions
+    // -------------------------------------------------------------------------
+
+    bool DatabaseManager::CreateSession(const std::wstring& partnerHandle, const std::wstring& state)
+    {
+        const char* sql =
+            "INSERT OR REPLACE INTO sessions (partner_handle, state, last_updated) "
+            "VALUES (?, ?, CURRENT_TIMESTAMP);";
+        sqlite3_stmt* stmt;
+        if (sqlite3_prepare_v2(m_db, sql, -1, &stmt, nullptr) != SQLITE_OK) return false;
+
+        std::string partner = WideToUTF8(partnerHandle);
+        std::string st      = WideToUTF8(state);
+        sqlite3_bind_text(stmt, 1, partner.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(stmt, 2, st.c_str(),      -1, SQLITE_TRANSIENT);
+
+        int rc = sqlite3_step(stmt);
+        sqlite3_finalize(stmt);
+        return rc == SQLITE_DONE;
+    }
+
+    bool DatabaseManager::UpdateSessionState(const std::wstring& partnerHandle, const std::wstring& state)
+    {
+        const char* sql =
+            "UPDATE sessions SET state = ?, last_updated = CURRENT_TIMESTAMP "
+            "WHERE partner_handle = ?;";
+        sqlite3_stmt* stmt;
+        if (sqlite3_prepare_v2(m_db, sql, -1, &stmt, nullptr) != SQLITE_OK) return false;
+
+        std::string st      = WideToUTF8(state);
+        std::string partner = WideToUTF8(partnerHandle);
+        sqlite3_bind_text(stmt, 1, st.c_str(),      -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(stmt, 2, partner.c_str(), -1, SQLITE_TRANSIENT);
+
+        int rc = sqlite3_step(stmt);
+        sqlite3_finalize(stmt);
+        return rc == SQLITE_DONE;
+    }
+
+    bool DatabaseManager::SaveSessionKeys(const std::wstring& partnerHandle,
+                                          const std::vector<uint8_t>& privateKey,
+                                          const std::vector<uint8_t>& publicKey)
+    {
+        const char* sql =
+            "UPDATE sessions SET my_private_key = ?, my_public_key = ?, last_updated = CURRENT_TIMESTAMP "
+            "WHERE partner_handle = ?;";
+        sqlite3_stmt* stmt;
+        if (sqlite3_prepare_v2(m_db, sql, -1, &stmt, nullptr) != SQLITE_OK) return false;
+
+        sqlite3_bind_blob(stmt, 1, privateKey.data(), static_cast<int>(privateKey.size()), SQLITE_TRANSIENT);
+        sqlite3_bind_blob(stmt, 2, publicKey.data(),  static_cast<int>(publicKey.size()),  SQLITE_TRANSIENT);
+
+        std::string partner = WideToUTF8(partnerHandle);
+        sqlite3_bind_text(stmt, 3, partner.c_str(), -1, SQLITE_TRANSIENT);
+
+        int rc = sqlite3_step(stmt);
+        sqlite3_finalize(stmt);
+        return rc == SQLITE_DONE;
+    }
+
+    bool DatabaseManager::SaveSharedSecret(const std::wstring& partnerHandle,
+                                           const std::vector<uint8_t>& sharedSecret)
+    {
+        const char* sql =
+            "UPDATE sessions SET shared_secret = ?, last_updated = CURRENT_TIMESTAMP "
+            "WHERE partner_handle = ?;";
+        sqlite3_stmt* stmt;
+        if (sqlite3_prepare_v2(m_db, sql, -1, &stmt, nullptr) != SQLITE_OK) return false;
+
+        sqlite3_bind_blob(stmt, 1, sharedSecret.data(), static_cast<int>(sharedSecret.size()), SQLITE_TRANSIENT);
+
+        std::string partner = WideToUTF8(partnerHandle);
+        sqlite3_bind_text(stmt, 2, partner.c_str(), -1, SQLITE_TRANSIENT);
+
+        int rc = sqlite3_step(stmt);
+        sqlite3_finalize(stmt);
+        return rc == SQLITE_DONE;
+    }
+
+    SessionRecord DatabaseManager::ReadSessionRow(sqlite3_stmt* stmt)
+    {
+        SessionRecord s;
+
+        const char* partner = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
+        s.partnerHandle = partner ? UTF8ToWide(partner) : L"";
+
+        const char* state = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
+        s.state = state ? UTF8ToWide(state) : L"";
+
+        auto readBlob = [&](int col) -> std::vector<uint8_t>
+        {
+            const void* data = sqlite3_column_blob(stmt, col);
+            int bytes = sqlite3_column_bytes(stmt, col);
+            if (!data || bytes <= 0) return {};
+            const uint8_t* p = static_cast<const uint8_t*>(data);
+            return std::vector<uint8_t>(p, p + bytes);
+        };
+
+        s.myPrivateKey = readBlob(2);
+        s.myPublicKey  = readBlob(3);
+        s.sharedSecret = readBlob(4);
+
+        const char* ts = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 5));
+        s.lastUpdated = ts ? UTF8ToWide(ts) : L"";
+
+        return s;
+    }
+
+    SessionRecord DatabaseManager::GetSession(const std::wstring& partnerHandle)
+    {
+        const char* sql =
+            "SELECT partner_handle, state, my_private_key, my_public_key, shared_secret, last_updated "
+            "FROM sessions WHERE partner_handle = ?;";
+        sqlite3_stmt* stmt;
+        if (sqlite3_prepare_v2(m_db, sql, -1, &stmt, nullptr) != SQLITE_OK) return {};
+
+        std::string partner = WideToUTF8(partnerHandle);
+        sqlite3_bind_text(stmt, 1, partner.c_str(), -1, SQLITE_TRANSIENT);
+
+        SessionRecord result;
+        if (sqlite3_step(stmt) == SQLITE_ROW)
+            result = ReadSessionRow(stmt);
+
+        sqlite3_finalize(stmt);
+        return result;
+    }
+
+    std::vector<SessionRecord> DatabaseManager::GetAllSessions()
+    {
+        const char* sql =
+            "SELECT partner_handle, state, my_private_key, my_public_key, shared_secret, last_updated "
+            "FROM sessions ORDER BY last_updated DESC;";
+        sqlite3_stmt* stmt;
+        if (sqlite3_prepare_v2(m_db, sql, -1, &stmt, nullptr) != SQLITE_OK) return {};
+
+        std::vector<SessionRecord> sessions;
+        while (sqlite3_step(stmt) == SQLITE_ROW)
+            sessions.push_back(ReadSessionRow(stmt));
+
+        sqlite3_finalize(stmt);
+        return sessions;
+    }
+
+    bool DatabaseManager::DeleteSession(const std::wstring& partnerHandle)
+    {
+        const char* sql = "DELETE FROM sessions WHERE partner_handle = ?;";
+        sqlite3_stmt* stmt;
+        if (sqlite3_prepare_v2(m_db, sql, -1, &stmt, nullptr) != SQLITE_OK) return false;
+
+        std::string partner = WideToUTF8(partnerHandle);
+        sqlite3_bind_text(stmt, 1, partner.c_str(), -1, SQLITE_TRANSIENT);
+
+        int rc = sqlite3_step(stmt);
+        sqlite3_finalize(stmt);
+        return rc == SQLITE_DONE;
+    }
+
+    bool DatabaseManager::ClearAllSessions()
+    {
+        return ExecuteSQL("DELETE FROM sessions;");
     }
 }
