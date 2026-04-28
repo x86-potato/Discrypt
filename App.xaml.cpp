@@ -5,6 +5,8 @@
 #include "DiscordInterop.h"
 #include "KeyboardHook.h"
 #include "DatabaseManager.h"
+#include "DiscordIPCModule.h"
+#include "JSInjection.h"
 #include <chrono>
 #include <ctime>
 #include <fstream>
@@ -22,6 +24,8 @@ winrt::Discrypt::implementation::MainWindow* g_mainWindow = nullptr;
 std::wstring g_userHandle = L""; // User's @handle for identification
 std::wstring g_partnerHandle = L""; // Current conversation partner's @handle
 ::Discrypt::DatabaseManager g_database; // Global database instance
+Discrypt::DiscordIpcModule g_ipcModule; // Global IPC module instance
+
 
 namespace winrt::Discrypt::implementation
 {
@@ -129,7 +133,6 @@ namespace winrt::Discrypt::implementation
 			// Update UI
 			if (g_mainWindow)
 			{
-				g_mainWindow->AddConversation(winrt::hstring(partnerHandle));
 				g_mainWindow->UpdateHandshakeStatus();
 			}
 		}
@@ -171,7 +174,6 @@ namespace winrt::Discrypt::implementation
 			// Update UI
 			if (g_mainWindow)
 			{
-				g_mainWindow->AddConversation(winrt::hstring(partnerHandle));
 				g_mainWindow->UpdateHandshakeStatus();
 			}
 
@@ -236,10 +238,10 @@ namespace winrt::Discrypt::implementation
 			::Discrypt::DiscordInterop::WriteTextBox(decrypted);
 			OutputDebugStringW((L"[Discrypt] Decrypted: " + decrypted + L"\n").c_str());
 
-			// Add to app history for the sender
-			if (g_mainWindow)
+			// Save to database
+			if (!senderHandle.empty() && senderHandle != L"unknown")
 			{
-				g_mainWindow->AddReceivedMessageToHistory(senderHandle, decrypted);
+				g_database.SaveMessage(senderHandle, decrypted, false);
 			}
 
 			// Don't send anything - just show the decrypted message
@@ -323,19 +325,15 @@ namespace winrt::Discrypt::implementation
 				originalText.find(L"HANDSHAKE") == std::wstring::npos && // Not a handshake message
 				originalText.find(L"[ENC]:") != 0) // Not a received encrypted message
 			{
-				if (g_mainWindow && !g_partnerHandle.empty())
+				// Save to database
+				if (!g_partnerHandle.empty())
 				{
 					OutputDebugStringW((L"[Discrypt] Logging sent message to partner: " + g_partnerHandle + L"\n").c_str());
-					OutputDebugStringW((L"[Discrypt] Message content: " + originalText + L"\n").c_str());
-					g_mainWindow->AddSentMessageToHistory(g_partnerHandle, originalText);
+					g_database.SaveMessage(g_partnerHandle, originalText, true);
 				}
 				else
 				{
-					OutputDebugStringW(L"[Discrypt] WARNING: Cannot log message - ");
-					if (!g_mainWindow)
-						OutputDebugStringW(L"g_mainWindow is null\n");
-					if (g_partnerHandle.empty())
-						OutputDebugStringW(L"g_partnerHandle is empty\n");
+					OutputDebugStringW(L"[Discrypt] WARNING: Cannot log message - g_partnerHandle is empty\n");
 				}
 			}
 		}
@@ -424,36 +422,68 @@ namespace winrt::Discrypt::implementation
 		g_mainWindow = mainWindowImpl.get();
 		window = *mainWindowImpl;
 
-		// Set default window size
+		// Set compact window size for minimal control panel
 		auto appWindow = window.AppWindow();
 		if (appWindow)
 		{
-			appWindow.Resize({ 700, 1100 });
+			appWindow.Resize({ 450, 600 });
 		}
 
 		window.Activate();
 
-		// Load or prompt for user handle
+		// Load user handle from database (used for crypto handshake)
 		g_userHandle = LoadUserHandle();
 		if (!g_userHandle.empty())
 		{
 			OutputDebugStringW((L"[Discrypt] Using stored handle: " + g_userHandle + L"\n").c_str());
-			// Populate the UserHandleInput on the home page
-			if (mainWindowImpl)
-			{
-				mainWindowImpl->DispatcherQueue().TryEnqueue([mainWindowImpl]()
-				{
-					mainWindowImpl->UserHandleInput().Text(g_userHandle);
-				});
-			}
 		}
 		else
 		{
-			OutputDebugStringW(L"[Discrypt] No stored handle found. Please enter your Discord handle on the Home page.\n");
+			OutputDebugStringW(L"[Discrypt] No stored handle found. Will use default or auto-generated handle.\n");
+			// Auto-generate a handle if needed
+			g_userHandle = L"@user" + std::to_wstring(GetTickCount64() % 10000);
+			SaveUserHandle(g_userHandle);
+			OutputDebugStringW((L"[Discrypt] Auto-generated handle: " + g_userHandle + L"\n").c_str());
 		}
 
 		// Install the keyboard hook with our callback
 		::Discrypt::KeyboardHook::Install(HandleAltEnter);
+
+		// Start IPC WebSocket server
+		OutputDebugStringW(L"[Discrypt] Starting IPC WebSocket server...\n");
+		if (g_ipcModule.start())
+		{
+			OutputDebugStringW(L"[Discrypt] IPC WebSocket server started successfully\n");
+		}
+		else
+		{
+			OutputDebugStringW(L"[Discrypt] ERROR: Failed to start IPC WebSocket server\n");
+		}
+
+		// Begin injection
+		std::thread([mainWindowImpl]() {
+
+			::Discrypt::DiscordInjector jsInjector;
+			OutputDebugStringW(L"[Discrypt] Starting Discord injection...\n");
+			bool success = jsInjector.Inject();
+
+			if (mainWindowImpl)
+			{
+				mainWindowImpl->DispatcherQueue().TryEnqueue([mainWindowImpl, success]()
+				{
+					mainWindowImpl->UpdateInjectionStatus(success);
+				});
+			}
+
+			if (success)
+			{
+				OutputDebugStringW(L"[Discrypt] Discord injection completed successfully\n");
+			}
+			else
+			{
+				OutputDebugStringW(L"[Discrypt] ERROR: Discord injection failed\n");
+			}
+			}).detach();
 	}
 
 	App::~App()
@@ -463,5 +493,7 @@ namespace winrt::Discrypt::implementation
 
 		// Cleanup encryption session
 		::Discrypt::CryptoManager::CleanupSession(g_session);
+
+		g_ipcModule.stop();
 	}
 }

@@ -42,6 +42,7 @@ namespace Discrypt
         bool SaveMessage(const std::wstring& partnerHandle, const std::wstring& content, bool isSent);
         std::vector<MessageRecord> LoadMessages(const std::wstring& partnerHandle);
         bool ClearAllMessages();
+        bool ClearAllData(); // Clear all user data (messages, conversations, user handle)
 
         // Conversation operations
         std::vector<ConversationRecord> GetAllConversations();

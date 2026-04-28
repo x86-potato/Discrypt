@@ -60,23 +60,17 @@ namespace Discrypt
     bool DatabaseManager::CreateTables()
     {
         const char* sql =
-            "CREATE TABLE IF NOT EXISTS users ("
-            "    user_id INTEGER PRIMARY KEY AUTOINCREMENT,"
-            "    handle TEXT UNIQUE NOT NULL"
+            // 1. SESSIONS TABLE: The core state machine for the handshake
+            "CREATE TABLE IF NOT EXISTS sessions ("
+            "    partner_handle TEXT PRIMARY KEY,"
+            "    state TEXT NOT NULL,"           // 'PENDING_INITIATOR', 'PENDING_RECEIVER', 'SECURED'
+            "    my_private_key BLOB,"           // Generated when handshake starts
+            "    my_public_key BLOB,"            // Sent to partner
+            "    shared_secret BLOB,"            // The final AES key (Null until SECURED)
+            "    last_updated DATETIME DEFAULT CURRENT_TIMESTAMP"
             ");"
-            ""
-            "CREATE TABLE IF NOT EXISTS messages ("
-            "    message_id INTEGER PRIMARY KEY AUTOINCREMENT,"
-            "    partner_handle TEXT NOT NULL,"
-            "    sender_handle TEXT NOT NULL,"
-            "    content TEXT NOT NULL,"
-            "    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,"
-            "    is_sent INTEGER NOT NULL"
-            ");"
-            ""
-            "CREATE INDEX IF NOT EXISTS idx_messages_partner ON messages(partner_handle);"
-            "CREATE INDEX IF NOT EXISTS idx_messages_timestamp ON messages(timestamp);"
-            ""
+
+            // 2. SETTINGS TABLE: App configuration (Your handle, auto-inject, etc.)
             "CREATE TABLE IF NOT EXISTS settings ("
             "    key TEXT PRIMARY KEY,"
             "    value TEXT"
@@ -222,6 +216,26 @@ namespace Discrypt
     bool DatabaseManager::ClearAllMessages()
     {
         return ExecuteSQL("DELETE FROM messages;");
+    }
+
+    bool DatabaseManager::ClearAllData()
+    {
+        // Clear all tables
+        bool success = true;
+        success &= ExecuteSQL("DELETE FROM messages;");
+        success &= ExecuteSQL("DELETE FROM users;");
+        success &= ExecuteSQL("DELETE FROM user_settings;");
+
+        if (success)
+        {
+            OutputDebugStringW(L"[DatabaseManager] All data cleared successfully\n");
+        }
+        else
+        {
+            OutputDebugStringW(L"[DatabaseManager] Failed to clear all data\n");
+        }
+
+        return success;
     }
 
     std::vector<ConversationRecord> DatabaseManager::GetAllConversations()

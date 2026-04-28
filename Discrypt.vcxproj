@@ -28,14 +28,15 @@
     <DefaultLanguage>en-US</DefaultLanguage>
     <MinimumVisualStudioVersion>16.0</MinimumVisualStudioVersion>
     <AppContainerApplication>false</AppContainerApplication>
-    <AppxPackage>true</AppxPackage>
+    <AppxPackage>false</AppxPackage>
     <ApplicationType>Windows Store</ApplicationType>
     <ApplicationTypeRevision>10.0</ApplicationTypeRevision>
     <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
     <WindowsTargetPlatformMinVersion>10.0.17763.0</WindowsTargetPlatformMinVersion>
     <UseWinUI>true</UseWinUI>
+    <WindowsPackageType>None</WindowsPackageType>
     <WinUISDKReferences>false</WinUISDKReferences>
-    <EnableMsixTooling>true</EnableMsixTooling>
+    <EnableMsixTooling>false</EnableMsixTooling>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <ItemGroup Label="ProjectConfigurations">
@@ -124,9 +125,11 @@
     <ClInclude Include="CryptoManager.h" />
     <ClInclude Include="DatabaseManager.h" />
     <ClInclude Include="DiscordInterop.h" />
+    <ClInclude Include="DiscordIPCModule.h" />
+    <ClInclude Include="JSInjection.h" />
     <ClInclude Include="KeyboardHook.h" />
     <ClInclude Include="pch.h" />
-	<ClInclude Include="sqlite3.h" />
+    <ClInclude Include="sqlite3.h" />
     <ClInclude Include="App.xaml.h">
       <DependentUpon>App.xaml</DependentUpon>
     </ClInclude>
@@ -143,8 +146,8 @@
     <ClCompile Include="DatabaseManager.cpp" />
     <ClCompile Include="DiscordInterop.cpp" />
     <ClCompile Include="KeyboardHook.cpp" />
-	<ClCompile Include="sqlite3.c"> 
-	    <PrecompiledHeader>NotUsing</PrecompiledHeader>
+    <ClCompile Include="sqlite3.c">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
     </ClCompile>
     <ClCompile Include="pch.cpp">
       <PrecompiledHeader>Create</PrecompiledHeader>
@@ -193,6 +196,7 @@
   <ItemGroup>
     <None Include="CHANGES.md" />
     <None Include="DH_KEY_EXCHANGE_GUIDE.md" />
+    <None Include="injection_payload.js" />
     <None Include="packages.config" />
     <None Include="REFACTORED_STRUCTURE.md" />
     <None Include="SQLITE_INTEGRATION.md" />
@@ -252,4 +256,3 @@
     <Error Condition="!Exists('packages\Microsoft.Windows.ImplementationLibrary.1.0.260126.7\build\native\Microsoft.Windows.ImplementationLibrary.targets')" Text="$([System.String]::Format('$(ErrorText)', 'packages\Microsoft.Windows.ImplementationLibrary.1.0.260126.7\build\native\Microsoft.Windows.ImplementationLibrary.targets'))" />
   </Target>
 </Project>
-

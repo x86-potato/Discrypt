@@ -1,4 +1,15 @@
 #pragma once
+
+// Prevent winsock.h from being included by windows.h
+// ixwebsocket requires winsock2.h instead
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+
+// Include winsock2 BEFORE windows.h to avoid conflicts
+#include <winsock2.h>
+#include <ws2tcpip.h>
+
 #include <windows.h>
 #include <unknwn.h>
 #include <restrictederrorinfo.h>
