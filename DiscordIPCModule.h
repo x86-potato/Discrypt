@@ -175,9 +175,17 @@ namespace Discrypt {
                                 const std::string ackPrefix = "[HANDSHAKE_ACK]:";
                                 if (original_text.rfind(ackPrefix, 0) == 0)
                                 {
-                                    // Initiator side: partner sent back their public key — derive our shared secret
                                     std::wstring wPartnerHandle = msg_partner.empty() ? g_partnerHandle
                                         : std::wstring(msg_partner.begin(), msg_partner.end());
+
+                                    // Only the initiator (PENDING_INITIATOR) needs to derive the shared secret here.
+                                    // Acceptors are already SECURED from ACCEPT_HANDSHAKE — skip.
+                                    SessionRecord dbSession = g_database.GetSession(wPartnerHandle);
+                                    if (dbSession.state != L"PENDING_INITIATOR")
+                                    {
+                                        OutputDebugStringW((L"[IPC] HANDSHAKE_ACK: skipping — session state is '" + dbSession.state + L"' (not PENDING_INITIATOR)\n").c_str());
+                                        return;
+                                    }
 
                                     OutputDebugStringW((L"[IPC] HANDSHAKE_ACK received from: " + wPartnerHandle + L"\n").c_str());
 
@@ -191,8 +199,7 @@ namespace Discrypt {
                                         return;
                                     }
 
-                                    // Load our own private key blob from DB
-                                    SessionRecord dbSession = g_database.GetSession(wPartnerHandle);
+                                    // Load session — also used for state guard and private key
                                     if (dbSession.myPrivateKey.empty())
                                     {
                                         OutputDebugStringW(L"[IPC] HANDSHAKE_ACK: no private key found in DB for this session\n");

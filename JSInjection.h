@@ -139,7 +139,7 @@ namespace Discrypt {
             // JS payload embedded directly — no file I/O, always in sync with the build.
             return R"JS(
 (() => {
-    const DISCRYPT_VERSION = '11';
+    const DISCRYPT_VERSION = '12';
     console.log(`[Discrypt] 🔄 Injecting version ${DISCRYPT_VERSION}`);
 
     // ==========================================
@@ -198,29 +198,13 @@ namespace Discrypt {
                     }));
 
                     // Enter to send
-                    setTimeout(() => {
-                        chatBox.dispatchEvent(new KeyboardEvent('keydown', {
-                            key: 'Enter', code: 'Enter', keyCode: 13, which: 13,
-                            bubbles: true, cancelable: true
-                        }));
-
-                        // If this was a HANDSHAKE_ACK, also notify C++ so it can
-                        // process it on the acceptor side (mirror of !accept scanning for INIT)
-                        if (data.text.startsWith('[HANDSHAKE_ACK]:')) {
-                            setTimeout(() => {
-                                if (ws.readyState === WebSocket.OPEN) {
-                                    ws.send(JSON.stringify({
-                                        type: 'MESSAGE',
-                                        id: ++messageIdCounter,
-                                        text: data.text,
-                                        partnerHandle: document.title.split(' - ')[0].trim()
-                                    }));
-                                    console.log('[Discrypt] ACK echoed back to C++ for acceptor-side confirmation');
-                                }
-                            }, 200);
-                        }
-                    }, 150);
-                }, 50);
+                        setTimeout(() => {
+                            chatBox.dispatchEvent(new KeyboardEvent('keydown', {
+                                key: 'Enter', code: 'Enter', keyCode: 13, which: 13,
+                                bubbles: true, cancelable: true
+                            }));
+                        }, 150);
+                    }, 50);
             }
         } catch (e) {
             console.error('[Discrypt] ❌ Parse Error:', e);
@@ -258,8 +242,28 @@ namespace Discrypt {
 
         targetNodes.forEach(c => {
             const originalText = c.innerText;
+            if (c.dataset.ipcProcessed) return;
 
-            if ((originalText.startsWith('[HANDSHAKE_ACK]:') || originalText.startsWith('[ENC]:')) && !c.dataset.ipcProcessed) {
+            if (originalText.startsWith('[HANDSHAKE_ACK]:')) {
+                // Handshake protocol message — notify C++ but leave the text unchanged
+                c.dataset.ipcProcessed = "true";
+                const id = ++messageIdCounter;
+                pendingRequests.set(id, c);
+
+                const sendPayload = () => {
+                    ws.send(JSON.stringify({
+                        type: "MESSAGE",
+                        id: id,
+                        text: originalText,
+                        partnerHandle: document.title.split(' - ')[0].trim()
+                    }));
+                };
+
+                if (ws.readyState === WebSocket.OPEN) sendPayload();
+                else ws.addEventListener('open', sendPayload, { once: true });
+
+            } else if (originalText.startsWith('[ENC]:')) {
+                // Encrypted message — replace text while C++ decrypts
                 c.dataset.ipcProcessed = "true";
                 const id = ++messageIdCounter;
                 pendingRequests.set(id, c);
@@ -275,11 +279,8 @@ namespace Discrypt {
                     }));
                 };
 
-                if (ws.readyState === WebSocket.OPEN) {
-                    sendPayload();
-                } else {
-                    ws.addEventListener('open', sendPayload, { once: true });
-                }
+                if (ws.readyState === WebSocket.OPEN) sendPayload();
+                else ws.addEventListener('open', sendPayload, { once: true });
             }
         });
     }
