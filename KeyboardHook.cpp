@@ -73,10 +73,11 @@ namespace Discrypt
 
 					if (altPressed)
 					{
-						// Skip if this is an injected keypress (our own simulated Enter)
+						// Skip if this is an injected Alt+Enter (our own simulated keypress to prevent recursion)
+						// But allow plain injected Enter to pass through (for sending messages)
 						if (pKeyboard->flags & LLKHF_INJECTED)
 						{
-							OutputDebugStringW(L"[Discrypt] Ignoring injected Enter key.\n");
+							OutputDebugStringW(L"[Discrypt] Ignoring injected Alt+Enter key.\n");
 							return CallNextHookEx(s_hookHandle, nCode, wParam, lParam);
 						}
 

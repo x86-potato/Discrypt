@@ -114,6 +114,22 @@ namespace winrt::Discrypt::implementation
             return;
         }
 
+        // Strip username prefix if present
+        // Format: [ENC]:@sender:encrypteddata
+        if (encryptedText.find(L"[ENC]:") == 0)
+        {
+            size_t firstColon = encryptedText.find(L':');
+            size_t secondColon = encryptedText.find(L':', firstColon + 1);
+
+            if (firstColon != std::wstring::npos && secondColon != std::wstring::npos)
+            {
+                // Has username prefix - strip it and reconstruct
+                std::wstring senderHandle = encryptedText.substr(firstColon + 1, secondColon - firstColon - 1);
+                encryptedText = L"[ENC]:" + encryptedText.substr(secondColon + 1);
+                OutputDebugStringW((L"[Discrypt] Stripped sender handle: " + senderHandle + L"\n").c_str());
+            }
+        }
+
         // Decrypt the message
         std::wstring decrypted = ::Discrypt::CryptoManager::DecryptMessage(g_session, encryptedText);
 
@@ -450,6 +466,34 @@ namespace winrt::Discrypt::implementation
             if (m_currentUser == user)
             {
                 UpdateMessageHistory();
+            }
+            else
+            {
+                // Switch to this conversation to display the sent message
+                // Find and select the navigation item for this user
+                // Note: Navigation items are tagged with the full handle (including @)
+                bool conversationFound = false;
+                for (auto const& item : NavView().MenuItems())
+                {
+                    if (auto navItem = item.try_as<NavigationViewItem>())
+                    {
+                        auto tag = unbox_value_or<hstring>(navItem.Tag(), L"");
+                        if (tag == winrt::hstring(senderHandle))
+                        {
+                            // Programmatically select this conversation
+                            // This will trigger NavView_SelectionChanged which sets m_currentUser and calls UpdateMessageHistory
+                            NavView().SelectedItem(navItem);
+                            conversationFound = true;
+                            OutputDebugStringW((L"[Discrypt] Switched to conversation: " + senderHandle + L"\n").c_str());
+                            break;
+                        }
+                    }
+                }
+
+                if (!conversationFound)
+                {
+                    OutputDebugStringW((L"[Discrypt] WARNING: Conversation not found in NavView for user: " + senderHandle + L"\n").c_str());
+                }
             }
 
             OutputDebugStringW((L"[Discrypt] Added sent message to history for user: " + user + L"\n").c_str());

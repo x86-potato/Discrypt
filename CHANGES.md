@@ -8,16 +8,38 @@
    - CryptBinaryToStringW includes null terminator in length, causing write past end of wstring buffer
    - Now properly handles null terminator and constructs string with explicit length
 
-2. **Fixed sent message logging to wrong conversation** (App.xaml.cpp)
+2. **Fixed heap corruption in UTF-8 conversion during encryption** (CryptoManager.cpp EncryptMessage)
+   - **Issue**: WideCharToMultiByte called with `-1` for length (includes null terminator)
+   - Buffer allocated as `utf8Size - 1` but conversion passed `utf8Size`, writing past buffer end
+   - **Fix**: Changed to explicit length conversion without null terminator inclusion
+   - Added validation and error handling for empty/failed conversions
+   - Now uses `plaintext.length()` instead of `-1` to avoid null terminator issues
+
+3. **Fixed heap corruption in UTF-8 conversion during decryption** (CryptoManager.cpp DecryptMessage)
+   - Similar issue with MultiByteToWideChar and wstring sizing
+   - **Fix**: Use `vector<wchar_t>` buffer instead of `wstring` with pre-sized allocation
+   - Construct final string from buffer with explicit character count
+   - Added validation and error handling
+
+4. **Fixed sent message logging to wrong conversation** (App.xaml.cpp)
    - Added `g_partnerHandle` global variable to track current conversation partner
    - Stored partner handle in both HANDSHAKE_INIT and HANDSHAKE_RESPONSE handlers
    - Changed line 303 from `AddSentMessageToHistory(g_userHandle, ...)` to `AddSentMessageToHistory(g_partnerHandle, ...)`
    - Sent messages now appear in the correct recipient's conversation
+   - Added debug output to track message logging
 
-3. **Decryption username prefix handling** (App.xaml.cpp line 240-243)
+5. **Fixed manual decryption username prefix handling** (MainWindow.xaml.cpp DecryptButton_Click)
+   - **Issue**: When manually pasting encrypted messages and clicking Decrypt, the `@sender:` prefix wasn't stripped
+   - **Symptom**: "cipher too short" error because Base64 decoder received `@sender:data` instead of just `data`
+   - **Fix**: Added username prefix parsing logic before calling DecryptMessage()
+   - Extracts sender handle between first and second colon: `[ENC]:@sender:data`
+   - Reconstructs as `[ENC]:data` (same logic as automatic Alt+Enter decryption)
+   - Manual decryption now works correctly
+
+4. **Automatic decryption username prefix handling** (App.xaml.cpp line 240-243)
    - Already correctly implemented: strips `@sender:` prefix from `[ENC]:@sender:data` format
    - Reconstructs as `[ENC]:data` before passing to DecryptMessage()
-   - No changes needed
+   - Alt+Enter in-place decryption works correctly
 
 ## Username Management Refactoring
 

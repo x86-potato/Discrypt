@@ -266,8 +266,25 @@ namespace Discrypt
 
 		// Convert plaintext to UTF-8 bytes
 		int utf8Size = WideCharToMultiByte(CP_UTF8, 0, plaintext.c_str(), -1, nullptr, 0, nullptr, nullptr);
+		if (utf8Size <= 1) // Empty or error (size 1 = just null terminator)
+		{
+			OutputDebugStringW(L"[Discrypt] Empty plaintext or conversion error\n");
+			return L"";
+		}
+
 		std::vector<BYTE> plaintextBytes(utf8Size - 1); // -1 to exclude null terminator
-		WideCharToMultiByte(CP_UTF8, 0, plaintext.c_str(), -1, (LPSTR)plaintextBytes.data(), utf8Size, nullptr, nullptr);
+		// Don't pass -1 for length, use explicit length of buffer we allocated
+		int bytesWritten = WideCharToMultiByte(CP_UTF8, 0, plaintext.c_str(), static_cast<int>(plaintext.length()), 
+			(LPSTR)plaintextBytes.data(), static_cast<int>(plaintextBytes.size()), nullptr, nullptr);
+
+		if (bytesWritten <= 0)
+		{
+			OutputDebugStringW(L"[Discrypt] UTF-8 conversion failed\n");
+			return L"";
+		}
+
+		// Adjust size to actual bytes written (should match, but be safe)
+		plaintextBytes.resize(bytesWritten);
 
 		// Open AES algorithm provider
 		BCRYPT_ALG_HANDLE hAesAlg = nullptr;
@@ -474,8 +491,22 @@ namespace Discrypt
 
 		// Convert UTF-8 bytes back to wide string
 		int wideSize = MultiByteToWideChar(CP_UTF8, 0, (LPCSTR)plaintext.data(), plaintextSize, nullptr, 0);
-		std::wstring result(wideSize, L'\0');
-		MultiByteToWideChar(CP_UTF8, 0, (LPCSTR)plaintext.data(), plaintextSize, result.data(), wideSize);
+		if (wideSize <= 0)
+		{
+			OutputDebugStringW(L"[Discrypt] Failed to calculate wide string size\n");
+			return L"[DECRYPT FAILED: Conversion error]";
+		}
+
+		std::vector<wchar_t> wideBuffer(wideSize);
+		int charsWritten = MultiByteToWideChar(CP_UTF8, 0, (LPCSTR)plaintext.data(), plaintextSize, wideBuffer.data(), wideSize);
+
+		if (charsWritten <= 0)
+		{
+			OutputDebugStringW(L"[Discrypt] Failed to convert UTF-8 to wide string\n");
+			return L"[DECRYPT FAILED: Conversion error]";
+		}
+
+		std::wstring result(wideBuffer.data(), charsWritten);
 
 		OutputDebugStringW((L"[Discrypt] Message decrypted successfully: " + result + L"\n").c_str());
 		return result;

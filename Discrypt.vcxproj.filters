@@ -15,6 +15,7 @@
     <ClCompile Include="DiscordInterop.cpp" />
     <ClCompile Include="KeyboardHook.cpp" />
     <ClCompile Include="CryptoManager.cpp" />
+    <ClCompile Include="DatabaseManager.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="pch.h" />

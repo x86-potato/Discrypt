@@ -4,11 +4,13 @@
 #include "CryptoManager.h"
 #include "DiscordInterop.h"
 #include "KeyboardHook.h"
+#include "DatabaseManager.h"
 #include <chrono>
 #include <ctime>
 #include <fstream>
 
 #pragma comment(lib, "bcrypt.lib")
+#pragma comment(lib, "Shell32.lib")
 
 // To learn more about WinUI, the WinUI project structure,
 // and more about our project templates, see: http://aka.ms/winui-project-info.
@@ -19,51 +21,35 @@ Discrypt::EncryptionSession g_session;
 winrt::Discrypt::implementation::MainWindow* g_mainWindow = nullptr;
 std::wstring g_userHandle = L""; // User's @handle for identification
 std::wstring g_partnerHandle = L""; // Current conversation partner's @handle
+::Discrypt::DatabaseManager g_database; // Global database instance
 
 namespace winrt::Discrypt::implementation
 {
 	/// <summary>
-	/// Load user handle from persistent storage
+	/// Load user handle from persistent storage (database)
 	/// </summary>
 	std::wstring LoadUserHandle()
 	{
-		WCHAR tempPath[MAX_PATH];
-		GetTempPathW(MAX_PATH, tempPath);
-		std::wstring folderPath = std::wstring(tempPath) + L"Discrypt\\";
-		std::wstring filePath = folderPath + L"user_handle.txt";
-
-		std::wifstream file(filePath);
-		if (file.is_open())
+		std::wstring handle = g_database.LoadUserHandle();
+		if (!handle.empty())
 		{
-			std::wstring handle;
-			if (std::getline(file, handle))
-			{
-				file.close();
-				OutputDebugStringW((L"[Discrypt] Loaded user handle: " + handle + L"\n").c_str());
-				return handle;
-			}
-			file.close();
+			OutputDebugStringW((L"[Discrypt] Loaded user handle from database: " + handle + L"\n").c_str());
 		}
-		return L"";
+		return handle;
 	}
 
 	/// <summary>
-	/// Save user handle to persistent storage
+	/// Save user handle to persistent storage (database)
 	/// </summary>
 	void SaveUserHandle(const std::wstring& handle)
 	{
-		WCHAR tempPath[MAX_PATH];
-		GetTempPathW(MAX_PATH, tempPath);
-		std::wstring folderPath = std::wstring(tempPath) + L"Discrypt\\";
-		CreateDirectoryW(folderPath.c_str(), NULL);
-
-		std::wstring filePath = folderPath + L"user_handle.txt";
-		std::wofstream file(filePath, std::ios::out | std::ios::trunc);
-		if (file.is_open())
+		if (g_database.SaveUserHandle(handle))
 		{
-			file << handle;
-			file.close();
-			OutputDebugStringW((L"[Discrypt] Saved user handle: " + handle + L"\n").c_str());
+			OutputDebugStringW((L"[Discrypt] Saved user handle to database: " + handle + L"\n").c_str());
+		}
+		else
+		{
+			OutputDebugStringW(L"[Discrypt] Failed to save user handle to database\n");
 		}
 	}
 
@@ -300,12 +286,8 @@ namespace winrt::Discrypt::implementation
 				modifiedText = encryptedData; // Fallback
 			}
 
-			// Add the original (decrypted) message to history
-			if (g_mainWindow && !g_partnerHandle.empty())
-			{
-				// Log to partner's conversation, not our own handle
-				g_mainWindow->AddSentMessageToHistory(g_partnerHandle, originalText);
-			}
+			// NOTE: Message history will be updated AFTER sending to Discord
+			// to prevent the Discrypt window from stealing focus
 		}
 		else
 		{
@@ -323,12 +305,39 @@ namespace winrt::Discrypt::implementation
 			// Write the modified text back
 			::Discrypt::DiscordInterop::WriteTextBox(modifiedText);
 
-			// Reduced delay - just enough for text to be written
-			Sleep(50);
+			// Wait for:
+			// 1. Text to be written to Discord
+			// 2. User to release Alt key from the Alt+Enter combo
+			Sleep(200);
 
 			// Now send Enter programmatically to send the message
 			OutputDebugStringW(L"[Discrypt] Sending Enter key programmatically...\n");
 			::Discrypt::KeyboardHook::SimulateKeyPress(VK_RETURN);
+
+			// Add a small delay to allow Discord to process the message
+			Sleep(100);
+
+			// Now update message history AFTER the message has been sent
+			// This prevents the Discrypt window from stealing focus during sending
+			if (g_session.state == ::Discrypt::EncryptionSession::State::HandshakeComplete &&
+				originalText.find(L"HANDSHAKE") == std::wstring::npos && // Not a handshake message
+				originalText.find(L"[ENC]:") != 0) // Not a received encrypted message
+			{
+				if (g_mainWindow && !g_partnerHandle.empty())
+				{
+					OutputDebugStringW((L"[Discrypt] Logging sent message to partner: " + g_partnerHandle + L"\n").c_str());
+					OutputDebugStringW((L"[Discrypt] Message content: " + originalText + L"\n").c_str());
+					g_mainWindow->AddSentMessageToHistory(g_partnerHandle, originalText);
+				}
+				else
+				{
+					OutputDebugStringW(L"[Discrypt] WARNING: Cannot log message - ");
+					if (!g_mainWindow)
+						OutputDebugStringW(L"g_mainWindow is null\n");
+					if (g_partnerHandle.empty())
+						OutputDebugStringW(L"g_partnerHandle is empty\n");
+				}
+			}
 		}
 		else
 		{
@@ -362,6 +371,55 @@ namespace winrt::Discrypt::implementation
 	/// <param name="e">Details about the launch request and process.</param>
 	void App::OnLaunched([[maybe_unused]] Microsoft::UI::Xaml::LaunchActivatedEventArgs const& e)
 	{
+		// Initialize database
+		WCHAR localAppDataPath[MAX_PATH];
+		if (SHGetFolderPathW(NULL, CSIDL_LOCAL_APPDATA, NULL, 0, localAppDataPath) == S_OK)
+		{
+			OutputDebugStringW(L"[Discrypt] LocalAppData path: ");
+			OutputDebugStringW(localAppDataPath);
+			OutputDebugStringW(L"\n");
+
+			std::wstring discryptDir = std::wstring(localAppDataPath) + L"\\Discrypt";
+			std::wstring dbPath = discryptDir + L"\\discrypt.db";
+
+			// Try to create directory and check for errors
+			if (!CreateDirectoryW(discryptDir.c_str(), NULL))
+			{
+				DWORD error = GetLastError();
+				if (error != ERROR_ALREADY_EXISTS)
+				{
+					OutputDebugStringW(L"[Discrypt] Failed to create directory. Error code: ");
+					OutputDebugStringW(std::to_wstring(error).c_str());
+					OutputDebugStringW(L"\n");
+				}
+				else
+				{
+					OutputDebugStringW(L"[Discrypt] Directory already exists\n");
+				}
+			}
+			else
+			{
+				OutputDebugStringW(L"[Discrypt] Directory created successfully\n");
+			}
+
+			OutputDebugStringW(L"[Discrypt] Attempting to create database at: ");
+			OutputDebugStringW(dbPath.c_str());
+			OutputDebugStringW(L"\n");
+
+			if (g_database.Initialize(dbPath))
+			{
+				OutputDebugStringW(L"[Discrypt] Database initialized successfully\n");
+			}
+			else
+			{
+				OutputDebugStringW(L"[Discrypt] Failed to initialize database\n");
+			}
+		}
+		else
+		{
+			OutputDebugStringW(L"[Discrypt] Failed to get LocalAppData path\n");
+		}
+
 		auto mainWindowImpl = make_self<MainWindow>();
 		g_mainWindow = mainWindowImpl.get();
 		window = *mainWindowImpl;
