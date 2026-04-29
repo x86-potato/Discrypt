@@ -93,14 +93,36 @@ namespace Discrypt {
                                 std::string plaintext = incoming_data.value("text", "");
                                 OutputDebugStringW((L"[IPC] Outgoing message intercepted: " + std::wstring(plaintext.begin(), plaintext.end()) + L"\n").c_str());
 
-                                // TODO: Encrypt plaintext here before sending to Discord.
-                                // For now, pass through unchanged.
-                                json response;
-                                response["type"] = "SEND_DISCORD_MESSAGE";
-                                response["text"] = "secret";
+                                OutputDebugStringW((L"[IPC] Current partner handle: " + std::wstring(g_partnerHandle.begin(), g_partnerHandle.end()) + L"\n").c_str());
 
-                                webSocket.send(response.dump());
-                                OutputDebugStringW(L"[IPC] Outgoing message forwarded to Discord (plaintext passthrough)\n");
+                                Discrypt::EncryptionSession session;
+                                session.sharedSecretData = g_database.GetSession(g_partnerHandle).sharedSecret;
+
+                                OutputDebugStringW((L"[IPC] Session shared secret (hex): " + Discrypt::CryptoManager::GetSharedSecretHex(session) + L"\n").c_str());
+
+                                // 1. Convert plaintext to wstring
+                                std::wstring wide_plaintext(plaintext.begin(), plaintext.end());
+
+                                // 2. CAPTURE the returned encrypted wstring
+                                std::wstring wide_ciphertext = ::Discrypt::CryptoManager::EncryptMessage(session, wide_plaintext);
+
+                                // 3. Convert the wide string (Base64) back to a standard std::string for JSON
+                                std::string ciphertext(wide_ciphertext.begin(), wide_ciphertext.end());
+
+                                OutputDebugStringW((L"[IPC] Encrypted message (base64): " + wide_ciphertext + L"\n").c_str());
+
+                                // Only send if encryption actually succeeded
+                                if (!ciphertext.empty()) {
+                                    json response;
+                                    response["type"] = "SEND_DISCORD_MESSAGE";
+                                    response["text"] = ciphertext;
+
+                                    webSocket.send(response.dump());
+                                    OutputDebugStringW(L"[IPC] Outgoing encrypted message forwarded to Discord\n");
+                                }
+                                else {
+                                    OutputDebugStringW(L"[IPC] ERROR: Encryption failed, dropping message.\n");
+                                }
                             }
                             else if (event_type == "ACCEPT_HANDSHAKE") {
                                 std::string partner_handle = incoming_data.value("partnerHandle", "");
@@ -235,10 +257,50 @@ namespace Discrypt {
                                 }
                                 else if (original_text.rfind("[ENC]:", 0) == 0)
                                 {
-                                    // TODO: decrypt with shared secret
+                                    std::string ciphertext = original_text.substr(6);
+
+                                    // 1. Extract the handle from the JSON payload as a standard std::string
+                                    std::string narrow_partner = incoming_data.value("partnerHandle", "");
+
+                                    // 2. Convert the JSON string to a std::wstring
+                                    std::wstring msg_partner(narrow_partner.begin(), narrow_partner.end());
+
+                                    // 3. Fallback to the global handle if the JSON payload was missing it
+                                    // (Both are now std::wstring, so this is perfectly legal)
+                                    if (msg_partner.empty()) {
+                                        msg_partner = g_partnerHandle;
+                                    }
+
+                                    OutputDebugStringW((L"[IPC] Incoming encrypted message. Handle: " + msg_partner + L"\n").c_str());
+
+                                    // 4. Retrieve the encryption session using the wide string
+                                    Discrypt::EncryptionSession session;
+                                    session.sharedSecretData = g_database.GetSession(msg_partner).sharedSecret;
+
+                                    OutputDebugStringW((L"[IPC] Session shared secret (hex): " + Discrypt::CryptoManager::GetSharedSecretHex(session) + L"\n").c_str());
+
+                                    // 5. Convert ciphertext std::string (Base64) to std::wstring
+                                    std::wstring wide_ciphertext(ciphertext.begin(), ciphertext.end());
+
+                                    // 6. Decrypt the message
+                                    std::wstring wide_plaintext = ::Discrypt::CryptoManager::DecryptMessage(session, wide_ciphertext);
+
+                                    // 7. Convert the wide string plaintext back to a standard std::string for JSON
+                                    std::string plaintext(wide_plaintext.begin(), wide_plaintext.end());
+
+                                    // 8. Build the response payload
                                     json response;
                                     response["id"] = msg_id;
-                                    response["text"] = "🔒 [Decryption not yet implemented]";
+
+                                    if (!plaintext.empty()) {
+                                        OutputDebugStringW((L"[IPC] Decrypted message successfully: " + wide_plaintext + L"\n").c_str());
+                                        response["text"] = "🔓 " + plaintext;
+                                    }
+                                    else {
+                                        OutputDebugStringW(L"[IPC] ERROR: Decryption failed.\n");
+                                        response["text"] = "❌ [Decryption failed]";
+                                    }
+
                                     webSocket.send(response.dump());
                                 }
                             }
