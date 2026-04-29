@@ -161,7 +161,7 @@
     </Midl>
   </ItemGroup>
   <ItemGroup>
-    <Text Include="readme.txt">
+    <Text Include="README.md">
       <DeploymentContent>false</DeploymentContent>
     </Text>
   </ItemGroup>
@@ -187,18 +187,18 @@
     Explorer "Package and Publish" context menu entry to be enabled for this project even if
     the Windows App SDK Nuget package has not yet been restored.
   -->
-	<ItemGroup>
-		<None Include="CHANGES.md" />
-		<None Include="DH_KEY_EXCHANGE_GUIDE.md" />
-		<Content Include="injection_payload.js">
-			<ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">false</ExcludedFromBuild>
-			<DeploymentContent Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</DeploymentContent>
-			<CopyToOutputDirectory>Always</CopyToOutputDirectory>
-		</Content>
-		<None Include="packages.config" />
-		<None Include="REFACTORED_STRUCTURE.md" />
-		<None Include="SQLITE_INTEGRATION.md" />
-	</ItemGroup>
+  <ItemGroup>
+    <None Include="CHANGES.md" />
+    <None Include="DH_KEY_EXCHANGE_GUIDE.md" />
+    <Content Include="injection_payload.js">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">false</ExcludedFromBuild>
+      <DeploymentContent Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</DeploymentContent>
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <None Include="packages.config" />
+    <None Include="REFACTORED_STRUCTURE.md" />
+    <None Include="SQLITE_INTEGRATION.md" />
+  </ItemGroup>
   <PropertyGroup Condition="'$(DisableHasPackageAndPublishMenuAddedByProject)'!='true' and '$(EnableMsixTooling)'=='true'">
     <HasPackageAndPublishMenu>true</HasPackageAndPublishMenu>
   </PropertyGroup>

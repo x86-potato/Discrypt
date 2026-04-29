@@ -13,19 +13,15 @@
     <ClCompile Include="pch.cpp" />
     <ClCompile Include="$(GeneratedFilesDir)module.g.cpp" />
     <ClCompile Include="DiscordInterop.cpp" />
-    <ClCompile Include="KeyboardHook.cpp" />
     <ClCompile Include="CryptoManager.cpp" />
     <ClCompile Include="DatabaseManager.cpp" />
-    <ClCompile Include="sqlite3.c" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="pch.h" />
     <ClInclude Include="DiscordInterop.h" />
-    <ClInclude Include="KeyboardHook.h" />
     <ClInclude Include="CryptoManager.h" />
     <ClInclude Include="DatabaseManager.h" />
     <ClInclude Include="DiscordIPCModule.h" />
-    <ClInclude Include="sqlite3.h" />
     <ClInclude Include="JSInjection.h" />
   </ItemGroup>
   <ItemGroup>
@@ -57,7 +53,7 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <Text Include="readme.txt" />
+    <Text Include="README.md" />
   </ItemGroup>
   <ItemGroup>
     <Manifest Include="app.manifest" />
@@ -68,7 +64,6 @@
     <None Include="REFACTORED_STRUCTURE.md" />
     <None Include="CHANGES.md" />
     <None Include="SQLITE_INTEGRATION.md" />
-    <None Include="injection_payload.js" />
   </ItemGroup>
   <ItemGroup>
     <Natvis Include="$(MSBuildThisFileDirectory)..\..\natvis\wil.natvis" />
