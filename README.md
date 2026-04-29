@@ -1,5 +1,3 @@
-Here is a complete `README.md` for Discrypt. It includes the mandatory setup instructions, a guide on how to use the app based on your code structure, and a clear security warning.
-
 ***
 
 # 🔒 Discrypt
