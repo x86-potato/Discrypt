@@ -45,7 +45,7 @@ You must launch Discord with specific Chromium flags to open the debugging port.
    ```text
    --remote-debugging-port=9222 --remote-allow-origins=*
    ```
-   *(Example: `C:\Users\Username\AppData\Local\Discord\Update.exe --processStart Discord.exe --remote-debugging-port=9222 --remote-allow-origins=*`)*
+   *(Example: `C:\Users\Username\AppData\Local\Discord\Update.exe --processStart Discord.exe --process-start-args "--remote-debugging-port=9222 --remote-allow-origins=*"`)*
 5. Click **Apply** and **OK**.
 
 ---
