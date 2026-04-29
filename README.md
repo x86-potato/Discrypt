@@ -1,5 +1,3 @@
-***
-
 # 🔒 Discrypt
 
 **Discrypt** is a proof-of-concept application that provides true End-to-End Encryption (E2EE) for Discord direct messages. It works by injecting a secure JavaScript payload directly into the Discord desktop client via the Chrome DevTools Protocol (CDP), intercepting outgoing messages to encrypt them locally, and decrypting incoming secure messages on the fly.
