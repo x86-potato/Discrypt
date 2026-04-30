@@ -1,0 +1,7 @@
+<Solution>
+  <Configurations>
+    <Platform Name="x64" />
+    <Platform Name="x86" />
+  </Configurations>
+  <Project Path="Discrypt32.vcxproj" Id="84edf5b6-e529-46c0-8849-e81601964c14" />
+</Solution>
