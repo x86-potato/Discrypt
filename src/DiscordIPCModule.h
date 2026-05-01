@@ -188,7 +188,8 @@ namespace Discrypt {
 
                                 Discrypt::CryptoManager::CleanupSession(session);
                             }
-                            else if (event_type == "HANDSHAKE_ACK") {
+                            else if (event_type == "HANDSHAKE_ACK") 
+                            {
                                 // 1. We now handle HANDSHAKE_ACK as its own dedicated IPC event
                                 std::string msg_partner = incoming_data.value("partnerHandle", "");
                                 std::string partnerPubKeyB64Utf8 = incoming_data.value("partnerPublicKey", "");
@@ -198,9 +199,10 @@ namespace Discrypt {
 
                                 SessionRecord dbSession = g_database.GetSession(wPartnerHandle);
 
-                                // Only the initiator needs to process the ACK to finalize the secret
-                                if (dbSession.state != L"PENDING_INITIATOR" && dbSession.state != L"SECURED") {
-                                    std::wcout << L"[IPC] HANDSHAKE_ACK: skipping: session state is '" << dbSession.state << L"' (not PENDING_INITIATOR)\n";
+                                // FIX: Only the initiator needs to process the ACK to finalize the secret.
+                                // If state is already SECURED, drop it! This prevents deriving garbage secrets from our own ACKs.
+                                if (dbSession.state != L"PENDING_INITIATOR") {
+                                    std::wcout << L"[IPC] HANDSHAKE_ACK: skipping: session state is '" << dbSession.state << L"'\n";
                                     return;
                                 }
 
@@ -240,7 +242,7 @@ namespace Discrypt {
                                     << Discrypt::CryptoManager::GetSharedSecretHex(session) << L"\n";
 
                                 Discrypt::CryptoManager::CleanupSession(session);
-                                }
+							}
                             else if (event_type == "MESSAGE") {
                                     // 2. The MESSAGE block is now strictly for handling [ENC]: text
                                     std::string original_text = incoming_data.value("text", "");
