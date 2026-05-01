@@ -188,125 +188,95 @@ namespace Discrypt {
 
                                 Discrypt::CryptoManager::CleanupSession(session);
                             }
-                            else if (event_type == "MESSAGE") {
-                                std::string original_text = incoming_data.value("text", "");
-                                int msg_id = incoming_data.value("id", 0);
+                            else if (event_type == "HANDSHAKE_ACK") {
+                                // 1. We now handle HANDSHAKE_ACK as its own dedicated IPC event
                                 std::string msg_partner = incoming_data.value("partnerHandle", "");
+                                std::string partnerPubKeyB64Utf8 = incoming_data.value("partnerPublicKey", "");
 
-                                std::wcout << L"[IPC] MESSAGE: " << std::wstring(original_text.begin(), original_text.end()) << L"\n";
+                                std::wstring wPartnerHandle = msg_partner.empty() ? g_partnerHandle
+                                    : std::wstring(msg_partner.begin(), msg_partner.end());
 
-                                const std::string ackPrefix = "[HANDSHAKE_ACK]:";
-                                if (original_text.rfind(ackPrefix, 0) == 0)
-                                {
-                                    std::wstring wPartnerHandle = msg_partner.empty() ? g_partnerHandle
-                                        : std::wstring(msg_partner.begin(), msg_partner.end());
+                                SessionRecord dbSession = g_database.GetSession(wPartnerHandle);
 
-                                    // Only the initiator (PENDING_INITIATOR) needs to derive the shared secret here.
-                                    // Acceptors are already SECURED from ACCEPT_HANDSHAKE — skip.
-                                    SessionRecord dbSession = g_database.GetSession(wPartnerHandle);
-                                    if (dbSession.state != L"PENDING_INITIATOR" && dbSession.state != L"SECURED")
-                                    {
-                                        std::wcout << L"[IPC] HANDSHAKE_ACK: skipping: session state is '" << dbSession.state << L"' (not PENDING_INITIATOR)\n";
-                                        return;
-                                    }
+                                // Only the initiator needs to process the ACK to finalize the secret
+                                if (dbSession.state != L"PENDING_INITIATOR" && dbSession.state != L"SECURED") {
+                                    std::wcout << L"[IPC] HANDSHAKE_ACK: skipping: session state is '" << dbSession.state << L"' (not PENDING_INITIATOR)\n";
+                                    return;
+                                }
 
-                                    std::wcout << L"[IPC] HANDSHAKE_ACK received from: " << wPartnerHandle << L"\n";
+                                std::wcout << L"[IPC] HANDSHAKE_ACK received from: " << wPartnerHandle << L"\n";
 
-                                    std::string partnerPubKeyB64Utf8 = original_text.substr(ackPrefix.size());
-                                    std::wstring partnerPubKeyB64(partnerPubKeyB64Utf8.begin(), partnerPubKeyB64Utf8.end());
-                                    std::vector<BYTE> partnerPubKeyBlob = Discrypt::CryptoManager::Base64Decode(partnerPubKeyB64);
+                                std::wstring partnerPubKeyB64(partnerPubKeyB64Utf8.begin(), partnerPubKeyB64Utf8.end());
+                                std::vector<BYTE> partnerPubKeyBlob = Discrypt::CryptoManager::Base64Decode(partnerPubKeyB64);
 
-                                    if (partnerPubKeyBlob.empty())
-                                    {
-                                        std::wcout << L"[IPC] HANDSHAKE_ACK: failed to decode partner public key\n";
-                                        return;
-                                    }
+                                if (partnerPubKeyBlob.empty()) {
+                                    std::wcout << L"[IPC] HANDSHAKE_ACK: failed to decode partner public key\n";
+                                    return;
+                                }
 
-                                    // Load session — also used for state guard and private key
-                                    if (dbSession.myPrivateKey.empty())
-                                    {
-                                        std::wcout << L"[IPC] HANDSHAKE_ACK: no private key found in DB for this session\n";
-                                        return;
-                                    }
+                                if (dbSession.myPrivateKey.empty()) {
+                                    std::wcout << L"[IPC] HANDSHAKE_ACK: no private key found in DB for this session\n";
+                                    return;
+                                }
 
-                                    // Reconstruct BCrypt session from stored private key
-                                    Discrypt::EncryptionSession session;
-                                    std::vector<BYTE> privBlob(dbSession.myPrivateKey.begin(), dbSession.myPrivateKey.end());
-                                    if (!Discrypt::CryptoManager::ImportPrivateKey(session, privBlob))
-                                    {
-                                        std::wcout << L"[IPC] HANDSHAKE_ACK: failed to import private key from DB\n";
-                                        return;
-                                    }
+                                Discrypt::EncryptionSession session;
+                                std::vector<BYTE> privBlob(dbSession.myPrivateKey.begin(), dbSession.myPrivateKey.end());
+                                if (!Discrypt::CryptoManager::ImportPrivateKey(session, privBlob)) {
+                                    std::wcout << L"[IPC] HANDSHAKE_ACK: failed to import private key from DB\n";
+                                    return;
+                                }
 
-                                    // Derive shared secret
-                                    if (!Discrypt::CryptoManager::DeriveSharedSecret(session, partnerPubKeyBlob))
-                                    {
-                                        std::wcout << L"[IPC] HANDSHAKE_ACK: failed to derive shared secret\n";
-                                        Discrypt::CryptoManager::CleanupSession(session);
-                                        return;
-                                    }
-
-                                    // Persist shared secret and finalize
-                                    std::vector<uint8_t> secret(session.sharedSecretData.begin(), session.sharedSecretData.end());
-                                    g_database.SaveSharedSecret(wPartnerHandle, secret);
-                                    g_database.UpdateSessionState(wPartnerHandle, L"SECURED");
-
-                                    std::wcout << L"[IPC] HANDSHAKE_ACK: handshake complete. Shared secret (hex): "
-                                        << Discrypt::CryptoManager::GetSharedSecretHex(session) << L"\n";
-
+                                if (!Discrypt::CryptoManager::DeriveSharedSecret(session, partnerPubKeyBlob)) {
+                                    std::wcout << L"[IPC] HANDSHAKE_ACK: failed to derive shared secret\n";
                                     Discrypt::CryptoManager::CleanupSession(session);
+                                    return;
                                 }
-                                else if (original_text.rfind("[ENC]:", 0) == 0)
-                                {
-                                    std::string ciphertext = original_text.substr(6);
 
-                                    // 1. Extract the handle from the JSON payload as a standard std::string
-                                    std::string narrow_partner = incoming_data.value("partnerHandle", "");
+                                std::vector<uint8_t> secret(session.sharedSecretData.begin(), session.sharedSecretData.end());
+                                g_database.SaveSharedSecret(wPartnerHandle, secret);
+                                g_database.UpdateSessionState(wPartnerHandle, L"SECURED");
 
-                                    // 2. Convert the JSON string to a std::wstring
-                                    std::wstring msg_partner(narrow_partner.begin(), narrow_partner.end());
+                                std::wcout << L"[IPC] HANDSHAKE_ACK: handshake complete. Shared secret (hex): "
+                                    << Discrypt::CryptoManager::GetSharedSecretHex(session) << L"\n";
 
-                                    // 3. Fallback to the global handle if the JSON payload was missing it
-                                    if (msg_partner.empty()) {
-                                        msg_partner = g_partnerHandle;
-                                    }
-
-                                    std::wcout << L"[IPC] Incoming encrypted message. Handle: " << msg_partner << L"\n";
-
-                                    // 4. Retrieve the encryption session using the wide string
-                                    Discrypt::EncryptionSession session;
-                                    session.sharedSecretData = g_database.GetSession(msg_partner).sharedSecret;
-
-                                    std::wcout << L"[IPC] Session shared secret (hex): " << Discrypt::CryptoManager::GetSharedSecretHex(session) << L"\n";
-
-                                    // 5. Convert ciphertext std::string (Base64) to std::wstring
-                                    std::wstring wide_ciphertext(ciphertext.begin(), ciphertext.end());
-
-                                    // 6. Decrypt the message
-                                    std::wstring wide_plaintext = ::Discrypt::CryptoManager::DecryptMessage(session, wide_ciphertext);
-
-                                    // 7. Convert the wide string plaintext back to a standard std::string for JSON
-                                    std::string plaintext(wide_plaintext.begin(), wide_plaintext.end());
-
-                                    // 8. Build the response payload
-                                    json response;
-                                    response["id"] = msg_id;
-
-                                    if (!plaintext.empty()) {
-                                        std::wcout << L"[IPC] Decrypted message successfully: " << wide_plaintext << L"\n";
-                                        response["text"] = "🔓 " + plaintext;
-                                    }
-                                    else {
-                                        std::wcout << L"[IPC] ERROR: Decryption failed.\n";
-                                        response["text"] = "❌ [Decryption failed]";
-                                    }
-
-                                    webSocket.send(response.dump());
+                                Discrypt::CryptoManager::CleanupSession(session);
                                 }
-                            }
+                            else if (event_type == "MESSAGE") {
+                                    // 2. The MESSAGE block is now strictly for handling [ENC]: text
+                                    std::string original_text = incoming_data.value("text", "");
+                                    int msg_id = incoming_data.value("id", 0);
+                                    std::string msg_partner = incoming_data.value("partnerHandle", "");
+
+                                    std::wcout << L"[IPC] MESSAGE: " << std::wstring(original_text.begin(), original_text.end()) << L"\n";
+
+                                    if (original_text.rfind("[ENC]:", 0) == 0) {
+                                        std::string ciphertext = original_text.substr(6);
+                                        std::wstring msg_partner_w = msg_partner.empty() ? g_partnerHandle : std::wstring(msg_partner.begin(), msg_partner.end());
+
+                                        Discrypt::EncryptionSession session;
+                                        session.sharedSecretData = g_database.GetSession(msg_partner_w).sharedSecret;
+
+                                        std::wstring wide_ciphertext(ciphertext.begin(), ciphertext.end());
+                                        std::wstring wide_plaintext = ::Discrypt::CryptoManager::DecryptMessage(session, wide_ciphertext);
+                                        std::string plaintext(wide_plaintext.begin(), wide_plaintext.end());
+
+                                        json response;
+                                        response["id"] = msg_id;
+
+                                        if (!plaintext.empty()) {
+                                            response["text"] = "🔓 " + plaintext;
+                                        }
+                                        else {
+                                            std::wcout << L"[IPC] ERROR: Decryption failed.\n";
+                                            response["text"] = "❌ [Decryption failed]";
+                                        }
+
+                                        webSocket.send(response.dump());
+                                    }
+                                    }
                             else {
-                                std::wcout << L"[IPC] Unknown event type: " << std::wstring(event_type.begin(), event_type.end()) << L"\n";
-                            }
+                                        std::wcout << L"[IPC] Unknown event type: " << std::wstring(event_type.begin(), event_type.end()) << L"\n";
+                                        }
                         }
                         catch (const json::exception& e) {
                             std::string error = std::string("JSON Parsing error: ") + e.what();

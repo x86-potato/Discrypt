@@ -104,7 +104,7 @@
 		}
 	};
 	// 4. MESSAGE OBSERVER
-	function modifyNode(node) {
+function modifyNode(node) {
 		if (node.nodeType !== 1) return;
 
 		const contents = node.querySelectorAll?.('[class*="messageContent"]');
@@ -112,33 +112,36 @@
 							(node.className?.includes?.('messageContent') ? [node] : []);
 
 		targetNodes.forEach(c => {
-			const originalText = c.innerText;
+            // Add .trim() to ensure whitespace from Discord rendering doesn't break the check
+			const originalText = c.innerText.trim();
 			if (c.dataset.ipcProcessed) return;
 
 			if (originalText.startsWith('[HANDSHAKE_ACK]:')) {
-				// Handshake protocol message — notify C++ but leave the text unchanged
-				c.dataset.ipcProcessed = "true";
-				const id = ++messageIdCounter;
-				pendingRequests.set(id, c);
+                    c.dataset.ipcProcessed = "true";
+                    
+                    // Added log so you can see it working in the console
+                    console.log(`[Discrypt] 🤝 Caught partner HANDSHAKE_ACK! Routing to C++...`);
 
-				const sendPayload = () => {
-					ws.send(JSON.stringify({
-						type: "MESSAGE",
-						id: id,
-						text: originalText,
-						partnerHandle: document.title.split(' - ')[0].trim()
-					}));
-				};
+					const prefix = '[HANDSHAKE_ACK]:';
+					const partnerPublicKey = originalText.substring(originalText.indexOf(prefix) + prefix.length).trim();
 
-				if (ws.readyState === WebSocket.OPEN) sendPayload();
-				else ws.addEventListener('open', sendPayload, { once: true });
+					const sendPayload = () => {
+						ws.send(JSON.stringify({
+							type: "HANDSHAKE_ACK",
+							partnerHandle: getAccuratePartnerHandle(),
+							partnerPublicKey: partnerPublicKey
+						}));
+					};
+
+					if (ws.readyState === WebSocket.OPEN) sendPayload();
+					else ws.addEventListener('open', sendPayload, { once: true });
 
 		} else if (originalText.startsWith('[ENC]:')) {
 			c.dataset.ipcProcessed = "true";
 			const id = ++messageIdCounter;
 			pendingRequests.set(id, c);
 
-			// MODIFIED HERE: Now displays the ciphertext alongside an emoji
+            console.log(`[Discrypt] 🔒 Caught encrypted message (ID: ${id})`);
 			c.innerText = "🔒 " + originalText;
 
 			const sendPayload = () => {
@@ -146,7 +149,6 @@
 					type: "MESSAGE",
 					id: id,
 					text: originalText,
-					// Fix: Dynamically fetch the current accurate handle
 					partnerHandle: getAccuratePartnerHandle() 
 				}));
 			};
@@ -154,7 +156,7 @@
 			if (ws.readyState === WebSocket.OPEN) sendPayload();
 			else ws.addEventListener('open', sendPayload, { once: true });
 
-		}                        });
+		} });
 	}
 
 	function hookCurrentChat() {
