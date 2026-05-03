@@ -1,21 +1,40 @@
 # 🔒 Discrypt
 
-**Discrypt** is a proof-of-concept application that provides true End-to-End Encryption (E2EE) for Discord direct messages. It works by injecting a secure JavaScript payload directly into the Discord desktop client via the Chrome DevTools Protocol (CDP), intercepting outgoing messages to encrypt them locally, and decrypting incoming secure messages on the fly.
+**Discrypt** is a proof-of-concept application that brings true, local End-to-End Encryption (E2EE) to Discord direct messages. 
 
-Because Discrypt operates entirely locally via an injected script and a local C++ WebSocket server, Discord's servers only ever see Base64 ciphertext.
+### 🎯 Project Goal
+The primary goal of Discrypt is to ensure that your private conversations remain strictly between you and your recipient. By handling all key generation, exchange, and encryption entirely on your local machine before a message is ever sent, Discord's servers—and anyone who might compromise them—only ever see unreadable, Base64 ciphertext. 
+
+This project aims to demonstrate how native application injection and local cryptography can be used to overlay privacy features onto existing, non-E2EE chat platforms without relying on third-party cloud services for key management.
+
+### 📸 Discrypt in Action
+#### Client view:
+<img width="794" height="448" alt="image" src="https://github.com/user-attachments/assets/8e18aab2-1670-491a-a24b-09734a1495e6" />
+
+#### Discord server view:
+
+<img width="794" height="580" alt="image" src="https://github.com/user-attachments/assets/b9af69b0-e4c3-43b5-a3cd-cd2849a67409" />
 
 ---
 
-## ⚠️ CRITICAL SECURITY WARNING
+## 🔐 Cryptographic Architecture
+Discrypt relies on the robust Windows Cryptography API: Next Generation (CNG) to handle all secure operations. Keys never leave the local C++ process memory.
 
-**Read this before installing or using Discrypt.**
+* **Key Exchange:** Elliptic Curve Diffie-Hellman (**ECDH**) using the **NIST P-256** curve.
+* **Key Derivation:** **SHA-256** is used as the Key Derivation Function (KDF) to generate the final symmetric key from the ECDH shared secret.
+* **Message Encryption:** **AES-256-GCM** (Galois/Counter Mode). This provides both confidentiality and authenticated encryption, meaning messages cannot be tampered with in transit without the decryption failing.
+* **Encoding:** Standard Base64 for safe transport through Discord's text infrastructure.
 
-To allow Discrypt to communicate with Discord, you are required to enable Discord's remote debugging port and unlock the Developer Tools. **Doing this inherently weakens the security of your Discord client.**
+---
 
-1. **Remote Debugging (`--remote-debugging-port=9222`)**: This opens a local network port that allows *any* program running on your computer to take complete control over your Discord client, read your messages, or send messages on your behalf.
-2. **Developer Tools (`DANGEROUS_ENABLE_DEVTOOLS...`)**: Discord deliberately disables DevTools to prevent self-XSS (Cross-Site Scripting) attacks where malicious actors trick users into pasting code that steals their login tokens. By enabling this, you bypass those protections.
+## ⚠️ Security Notice & Threat Model
 
-**Do not use this setup on a shared computer, and ensure your PC is free of malware before enabling these flags. Use at your own risk.**
+To allow Discrypt to communicate with Discord, you must enable Discord's remote debugging port (`9222`) and unlock the Developer Tools. **It is important to understand what this means for your security:**
+
+* **The Reality:** A random website in your normal web browser *cannot* simply hack your Discord account because you opened this port. Modern web browsers use strict CORS (Cross-Origin Resource Sharing) policies and sandboxing that prevent websites from arbitrarily interacting with local debugging ports.
+* **The Risk:** Opening this port *does* allow other local programs running on your computer to take control of your Discord client. If your computer is infected with malware, that malware could easily read your messages or steal your session token. However, if malicious software is already executing locally on your machine, your system is fully compromised anyway. 
+
+**Bottom Line:** This setup removes Discord's internal protections against local process tampering. Do not use this setup on a public or shared computer, and ensure your PC is free of malicious software. Use at your own risk.
 
 ---
 
@@ -69,15 +88,15 @@ Before you can chat securely, you and your partner must exchange encryption keys
    ```
 3. **DO NOT press Enter.** Instead, press `Alt + Enter`. Discrypt will intercept this command and generate a secure `[HANDSHAKE_INIT]:` message containing your public key.
 4. Your partner must see this message, type `!accept` into their chat box, and press `Alt + Enter`.
-5. Once accepted, both clients will generate a shared secret.
+5. Once accepted, both clients will silently generate the shared secret.
 
 ### 3. Sending Encrypted Messages
 To send a message that Discord cannot read:
 
 1. Type your message normally into the chat box (e.g., *Hello, this is a secret!*).
 2. Press `Alt + Enter` instead of standard Enter.
-3. Discrypt will intercept the text, route it to your local C++ server for encryption, and paste the resulting `[ENC]:` Base64 ciphertext into Discord.
-4. When your partner receives the message, their Discrypt client will automatically detect the `[ENC]:` tag, decrypt the payload using the shared secret, and display the readable text in the Discord UI marked with a 🔒 or 🔓 emoji.
+3. Discrypt will intercept the text, route it to your local C++ server for AES-256-GCM encryption, and paste the resulting `[ENC]:` Base64 ciphertext into Discord.
+4. When your partner receives the message, their Discrypt client will automatically detect the `[ENC]:` tag, decrypt the payload using the shared secret, and display the readable text natively in the Discord UI.
 
 ---
 
@@ -86,7 +105,7 @@ To send a message that Discord cannot read:
 1. **CDP Injection:** Discrypt connects to Discord's embedded Chromium instance via `localhost:9222`. It spoofs the `devtools://devtools` origin header to bypass security restrictions and injects a custom JavaScript payload.
 2. **DOM Hooking:** The JavaScript uses a `MutationObserver` to watch the DOM for new messages in real-time, instantly catching incoming encrypted texts.
 3. **IPC WebSocket:** The JS payload communicates over a local WebSocket (`ws://127.0.0.1:9090`) to the C++ backend.
-4. **Local Cryptography:** All shared secret generation and AES encryption/decryption happens securely in the compiled C++ backend, keeping keys out of the browser's memory space.
+4. **Local Cryptography:** All shared secret generation and AES encryption/decryption happens securely in the compiled C++ backend via the Windows Cryptography API (CNG), keeping private keys completely isolated from the browser's memory space.
 
 ---
 
